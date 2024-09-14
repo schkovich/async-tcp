@@ -134,6 +134,7 @@ int AsyncTcpClient::connect(IPAddress ip, uint16_t port) {
 
     tcp_pcb* pcb = tcp_new();
     if (!pcb) {
+        Serial.println("No PCB");
         return 0;
     }
 
@@ -144,8 +145,11 @@ int AsyncTcpClient::connect(IPAddress ip, uint16_t port) {
     _client = new AsyncTcpClientContext(pcb, nullptr, nullptr);
     _client->ref();
     _client->setTimeout(_timeout);
+    _client->setOnConnectCallback(_onConnectHandler);
+    _client->setOnErrorCallback(_onErrorHandler);
     int res = _client->connect(ip, port);
     if (res == 0) {
+        Serial.println("Client did not menage to connect.");
         _client->unref();
         _client = nullptr;
         return 0;
@@ -398,4 +402,13 @@ int8_t AsyncTcpClient::_connected(void *tpcb, int8_t err) {
 [[maybe_unused]] void AsyncTcpClient::_err(int8_t err) {
 //    probably the method should be named _error for consistency
 //    _error is a protected member of AsyncTcpContext
+}
+
+void AsyncTcpClient::setOnConnectCallback(const std::function<void()>& callback)
+{
+    _onConnectHandler = callback;
+}
+
+void AsyncTcpClient::setOnErrorCallback(const std::function<void(err_t)> &callback) {
+    _onErrorHandler = callback;
 }

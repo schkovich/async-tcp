@@ -44,7 +44,7 @@ class WiFiServer; // Is it needed and used?
 
 class AsyncTcpClient : public Client, public SList<AsyncTcpClient> {
 protected:
-    AsyncTcpClient(AsyncTcpClientContext* client);
+    explicit AsyncTcpClient(AsyncTcpClientContext* client);
 
 public:
     AsyncTcpClient();
@@ -62,37 +62,36 @@ public:
     // ref.
     // - https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rc-copy-virtual
     // - https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rh-copy
-    [[maybe_unused]] virtual std::unique_ptr<AsyncTcpClient> clone() const;
-
+    [[maybe_unused]] [[nodiscard]] virtual std::unique_ptr<AsyncTcpClient> clone() const;
     virtual uint8_t status();
-    virtual int connect(IPAddress ip, uint16_t port) override;
-    virtual int connect(const char *host, uint16_t port) override;
+    int connect(IPAddress ip, uint16_t port) override;
+    int connect(const char *host, uint16_t port) override;
     virtual int connect(const String& host, uint16_t port);
-    virtual size_t write(uint8_t) override;
-    virtual size_t write(const uint8_t *buf, size_t size) override;
+    size_t write(uint8_t) override;
+    size_t write(const uint8_t *buf, size_t size) override;
     size_t write(Stream& stream);
 
-    virtual int available() override;
-    virtual int read() override;
-    virtual int read(uint8_t* buf, size_t size) override;
+    int available() override;
+    int read() override;
+    int read(uint8_t* buf, size_t size) override;
     int read(char* buf, size_t size);
 
-    virtual int peek() override;
+    int peek() override;
     virtual size_t peekBytes(uint8_t *buffer, size_t length);
 
     [[maybe_unused]] size_t peekBytes(char *buffer, size_t length) {
         return peekBytes((uint8_t *) buffer, length);
     }
-    virtual void flush() override {
+    void flush() override {
         (void)flush(0);    // wait for all outgoing characters to be sent, output buffer should be empty after this call
     }
-    virtual void stop() override {
+    void stop() override {
         (void)stop(0);
     }
     bool flush(unsigned int maxWaitMs);
     bool stop(unsigned int maxWaitMs);
-    virtual uint8_t connected() override;
-    virtual operator bool() override;
+    uint8_t connected() override;
+    explicit operator bool() override;
 
     [[maybe_unused]] IPAddress remoteIP();
 
@@ -117,13 +116,13 @@ public:
 
     void     keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC, uint16_t intv_sec = TCP_DEFAULT_KEEP_ALIVE_INTERVAL_SEC, uint8_t count = TCP_DEFAULT_KEEP_ALIVE_COUNT);
 
-    [[maybe_unused]] bool     isKeepAliveEnabled() const;
+    [[maybe_unused]] [[nodiscard]] bool isKeepAliveEnabled() const;
 
-    [[maybe_unused]] uint16_t getKeepAliveIdle() const;
+    [[maybe_unused]] [[nodiscard]] uint16_t getKeepAliveIdle() const;
 
-    [[maybe_unused]] uint16_t getKeepAliveInterval() const;
+    [[maybe_unused]] [[nodiscard]] uint16_t getKeepAliveInterval() const;
 
-    [[maybe_unused]] uint8_t  getKeepAliveCount() const;
+    [[maybe_unused]] [[nodiscard]] uint8_t  getKeepAliveCount() const;
 
     [[maybe_unused]] void     disableKeepAlive() {
         keepAlive(0, 0, 0);
@@ -137,7 +136,7 @@ public:
 
     [[maybe_unused]] static bool getDefaultNoDelay();
 
-    [[maybe_unused]] bool getNoDelay() const;
+    [[maybe_unused]] [[nodiscard]] bool getNoDelay() const;
     void setNoDelay(bool nodelay);
 
     // default Sync=false
@@ -148,8 +147,10 @@ public:
 
     [[maybe_unused]] static bool getDefaultSync();
 
-    [[maybe_unused]] bool getSync() const;
+    [[maybe_unused]] [[nodiscard]] bool getSync() const;
     void setSync(bool sync);
+    void setOnConnectCallback(const std::function<void()> &callback);
+    void setOnErrorCallback(const std::function<void(err_t)> &callback);
 
     // peek buffer API is present
     //virtual bool hasPeekBufferAPI () const override;
@@ -180,4 +181,6 @@ protected:
     AsyncTcpClientContext*  _client;
     AsyncTcpClient* _owned;
     static uint16_t _localPort;
+    std::function<void()> _onConnectHandler;
+    std::function<void(err_t)> _onErrorHandler;
 };

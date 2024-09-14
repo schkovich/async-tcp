@@ -26,7 +26,8 @@ class AsyncTcpClient;
 
 typedef void (*discard_cb_t)(void*, AsyncTcpClientContext*);
 
-#include <assert.h>
+#include <cassert>
+#include <utility>
 #include "lwip/timeouts.h"
 
 //#include <esp_priv.h>
@@ -46,7 +47,7 @@ bool getDefaultPrivateGlobalSyncValue();
 class AsyncTcpClientContext {
 public:
     AsyncTcpClientContext(tcp_pcb* pcb, discard_cb_t discard_cb, void* discard_cb_arg) :
-            _pcb(pcb), _rx_buf(0), _rx_buf_offset(0), _discard_cb(discard_cb), _discard_cb_arg(discard_cb_arg), _refcnt(0), _next(0),
+            _pcb(pcb), _rx_buf(nullptr), _rx_buf_offset(0), _discard_cb(discard_cb), _discard_cb_arg(discard_cb_arg), _refcnt(0), _next(nullptr),
             _sync(::getDefaultPrivateGlobalSyncValue()) {
         tcp_setprio(_pcb, TCP_PRIO_MIN);
         tcp_arg(_pcb, this);
@@ -97,10 +98,9 @@ public:
         return err;
     }
 
-    ~AsyncTcpClientContext() {
-    }
+    ~AsyncTcpClientContext() = default;
 
-    AsyncTcpClientContext* next() const {
+    [[nodiscard]] AsyncTcpClientContext* next() const {
         return _next;
     }
 
@@ -139,6 +139,9 @@ public:
 #endif
         err_t err = tcp_connect(_pcb, addr, port, &AsyncTcpClientContext::_s_connected);
         if (err != ERR_OK) {
+            Serial.println("LWIP tcp_connect failed.");
+            Serial.print(err);
+            Serial.println("");
             return 0;
         }
         _connect_pending = true;
@@ -148,20 +151,25 @@ public:
 //        esp_delay(_timeout_ms, [this]() {
 //            return this->_connect_pending;
 //        }, 1);
-        _connect_pending = false;
+//        _connect_pending = false;c
         if (!_pcb) {
             DEBUGV(":cabrt\r\n");
+            Serial.println("No PCB here,");
             return 0;
         }
-        if (state() != ESTABLISHED) {
-            DEBUGV(":ctmo\r\n");
-            abort();
-            return 0;
-        }
+//        if (state() != ESTABLISHED) {
+//            Serial.println("Connection not established.");
+//            Serial.print(state());
+//            Serial.println("That above was state.");
+//            DEBUGV(":ctmo\r\n");
+//            abort();
+//            return 0;
+//        }
+//        Serial.println("Connection established.");
         return 1;
     }
 
-    size_t availableForWrite() const {
+    [[nodiscard]] size_t availableForWrite() const {
         return _pcb ? tcp_sndbuf(_pcb) : 0;
     }
 
@@ -176,7 +184,7 @@ public:
         }
     }
 
-    bool getNoDelay() const {
+    [[nodiscard]] bool getNoDelay() const {
         if (!_pcb) {
             return false;
         }
@@ -191,19 +199,19 @@ public:
         _timeout_ms = timeout_ms;
     }
 
-    [[maybe_unused]] int getTimeout() const {
+    [[maybe_unused]] [[nodiscard]] int getTimeout() const {
         return _timeout_ms;
     }
 
-    const ip_addr_t* getRemoteAddress() const {
+    [[nodiscard]] const ip_addr_t* getRemoteAddress() const {
         if (!_pcb) {
-            return 0;
+            return nullptr;
         }
 
         return &_pcb->remote_ip;
     }
 
-    uint16_t getRemotePort() const {
+    [[nodiscard]] uint16_t getRemotePort() const {
         if (!_pcb) {
             return 0;
         }
@@ -211,15 +219,15 @@ public:
         return _pcb->remote_port;
     }
 
-    const ip_addr_t* getLocalAddress() const {
+    [[nodiscard]] const ip_addr_t* getLocalAddress() const {
         if (!_pcb) {
-            return 0;
+            return nullptr;
         }
 
         return &_pcb->local_ip;
     }
 
-    uint16_t getLocalPort() const {
+    [[nodiscard]] uint16_t getLocalPort() const {
         if (!_pcb) {
             return 0;
         }
@@ -227,7 +235,7 @@ public:
         return _pcb->local_port;
     }
 
-    size_t getSize() const {
+    [[nodiscard]] size_t getSize() const {
         if (!_rx_buf) {
             return 0;
         }
@@ -268,7 +276,7 @@ public:
         return size_read;
     }
 
-    char peek() const {
+    [[nodiscard]] char peek() const {
         if (!_rx_buf) {
             return 0;
         }
@@ -301,11 +309,11 @@ public:
             tcp_recved(_pcb, (size_t) _rx_buf->tot_len);
         }
         pbuf_free(_rx_buf);
-        _rx_buf = 0;
+        _rx_buf = nullptr;
         _rx_buf_offset = 0;
     }
 
-    bool wait_until_acked(int max_wait_ms = ASYNCTCPCLIENT_MAX_FLUSH_WAIT_MS) {
+    bool wait_until_acked(int max_wait_ms = ASYNC_TCP_CLIENT_MAX_FLUSH_WAIT_MS) {
         // https://github.com/esp8266/Arduino/pull/3967#pullrequestreview-83451496
         // option 1 done
         // option 2 / _write_some() not necessary since _datasource is always nullptr here
@@ -318,7 +326,7 @@ public:
 
         // wait for peer's acks to flush lwIP's output buffer
         uint32_t last_sent = millis();
-        while (1) {
+        while (true) {
             if (millis() - last_sent > (uint32_t) max_wait_ms) {
 #ifdef DEBUGV
                 // wait until sent: timeout
@@ -355,7 +363,7 @@ public:
         return true;
     }
 
-    uint8_t state() const {
+    [[nodiscard]] uint8_t state() const {
         if (!_pcb || _pcb->state == CLOSE_WAIT || _pcb->state == CLOSING) {
             // CLOSED for WiFIClient::status() means nothing more can be written
             return CLOSED;
@@ -398,7 +406,7 @@ public:
         return sent;
     }
 
-    void keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEPALIVE_IDLE_SEC, uint16_t intv_sec = TCP_DEFAULT_KEEPALIVE_INTERVAL_SEC, uint8_t count = TCP_DEFAULT_KEEPALIVE_COUNT) {
+    void keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC, uint16_t intv_sec = TCP_DEFAULT_KEEP_ALIVE_INTERVAL_SEC, uint8_t count = TCP_DEFAULT_KEEP_ALIVE_COUNT) {
         if (idle_sec && intv_sec && count) {
             _pcb->so_options |= SOF_KEEPALIVE;
             _pcb->keep_idle = (uint32_t)1000 * idle_sec;
@@ -409,23 +417,23 @@ public:
         }
     }
 
-    bool isKeepAliveEnabled() const {
+    [[nodiscard]] bool isKeepAliveEnabled() const {
         return !!(_pcb->so_options & SOF_KEEPALIVE);
     }
 
-    uint16_t getKeepAliveIdle() const {
+    [[nodiscard]] uint16_t getKeepAliveIdle() const {
         return isKeepAliveEnabled() ? (_pcb->keep_idle + 500) / 1000 : 0;
     }
 
-    uint16_t getKeepAliveInterval() const {
+    [[nodiscard]] uint16_t getKeepAliveInterval() const {
         return isKeepAliveEnabled() ? (_pcb->keep_intvl + 500) / 1000 : 0;
     }
 
-    uint8_t getKeepAliveCount() const {
+    [[nodiscard]] uint8_t getKeepAliveCount() const {
         return isKeepAliveEnabled() ? _pcb->keep_cnt : 0;
     }
 
-    bool getSync() const {
+    [[nodiscard]] bool getSync() const {
         return _sync;
     }
 
@@ -455,9 +463,17 @@ public:
         _consume(consume);
     }
 
+    void setOnConnectCallback(const std::function<void()>& cb) {
+        _connectCb = cb;  // Set the success callback
+    }
+
+    void setOnErrorCallback(const std::function<void(err_t err)>& cb) {
+        _errorCb = cb;  // Set the error callback
+    }
+
 protected:
 
-    bool _is_timeout() {
+    [[nodiscard]] bool _is_timeout() const {
         return millis() - _op_start_time > _timeout_ms;
     }
 
@@ -612,7 +628,7 @@ protected:
         } else if (!_rx_buf->next) {
             DEBUGV(":c0 %d, %d\r\n", size, _rx_buf->tot_len);
             auto head = _rx_buf;
-            _rx_buf = 0;
+            _rx_buf = nullptr;
             _rx_buf_offset = 0;
             pbuf_free(head);
         } else {
@@ -631,7 +647,7 @@ protected:
     err_t _recv(tcp_pcb* pcb, pbuf* pb, err_t err) {
         (void) pcb;
         (void) err;
-        if (pb == 0) {
+        if (pb == nullptr) {
             // connection closed by peer
             DEBUGV(":rcl pb=%p sz=%d\r\n", _rx_buf, _rx_buf ? _rx_buf->tot_len : -1);
             _notify_error();
@@ -666,6 +682,7 @@ protected:
         tcp_recv(_pcb, nullptr);
         tcp_err(_pcb, nullptr);
         _pcb = nullptr;
+        _errorCb(err);
         _notify_error();
     }
 
@@ -675,9 +692,15 @@ protected:
         assert(pcb == _pcb);
         if (_connect_pending) {
             // resume connect
+            Serial.println("Calling connect callback.");
+            Serial.println("Connection state:");
+            Serial.print(state());
+            Serial.println("");
+            _connectCb();
             _connect_pending = false;
             //esp_schedule();
         }
+        Serial.println("No pending connection. Skipping connect callback.");
         return ERR_OK;
     }
 
@@ -697,9 +720,14 @@ protected:
     }
 
     static void _s_error(void *arg, err_t err) {
+        Serial.println("There was an error");
+        Serial.print(err);
+        Serial.println("");
         if (arg) {
+            Serial.println("Triggering _error");
             reinterpret_cast<AsyncTcpClientContext*>(arg)->_error(err);
         }
+        Serial.println("Skipping triggering _error");
     }
 
     static err_t _s_poll(void *arg, struct tcp_pcb *tpcb) {
@@ -720,8 +748,10 @@ protected:
 
     static err_t _s_connected(void* arg, struct tcp_pcb *pcb, err_t err) {
         if (arg) {
+            Serial.println("_s_connected fired with arguments.");
             return reinterpret_cast<AsyncTcpClientContext*>(arg)->_connected(pcb, err);
         } else {
+            Serial.println("_s_connected fired.");
             return ERR_OK;
         }
     }
@@ -745,6 +775,7 @@ private:
 
     int8_t _refcnt;
     AsyncTcpClientContext* _next;
-
+    std::function<void()> _connectCb;
+    std::function<void(err_t err)> _errorCb;
     bool _sync;
 };

@@ -147,6 +147,7 @@ int AsyncTcpClient::connect(IPAddress ip, uint16_t port) {
     _client->setTimeout(_timeout);
     _client->setOnConnectCallback(_onConnectHandler);
     _client->setOnErrorCallback(_onErrorHandler);
+    _client->setOnReceiveCallback(_onReceiveHandler);
     int res = _client->connect(ip, port);
     if (res == 0) {
         Serial.println("Client did not menage to connect.");
@@ -215,6 +216,7 @@ size_t AsyncTcpClient::write(Stream& stream) {
 
 int AsyncTcpClient::available() {
     if (!_client) {
+        Serial.println("Man, there is no client!");
         return 0;
     }
 
@@ -409,6 +411,10 @@ void AsyncTcpClient::setOnConnectCallback(const std::function<void()>& callback)
     _onConnectHandler = callback;
 }
 
-void AsyncTcpClient::setOnErrorCallback(const std::function<void(err_t)> &callback) {
+void AsyncTcpClient::setOnErrorCallback(const std::function<void(err_t err)> &callback) {
     _onErrorHandler = callback;
+}
+
+void AsyncTcpClient::setOnReceiveCallback(const std::function<err_t (struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> &callback) {
+    _onReceiveHandler = callback;
 }

@@ -151,6 +151,7 @@ public:
     void setSync(bool sync);
     void setOnConnectCallback(const std::function<void()> &callback);
     void setOnErrorCallback(const std::function<void(err_t)> &callback);
+    void setOnReceiveCallback(const std::function<err_t (struct tcp_pcb *, struct pbuf *, err_t)> &callback);
 
     // peek buffer API is present
     //virtual bool hasPeekBufferAPI () const override;
@@ -182,5 +183,6 @@ protected:
     AsyncTcpClient* _owned;
     static uint16_t _localPort;
     std::function<void()> _onConnectHandler;
-    std::function<void(err_t)> _onErrorHandler;
+    std::function<void(err_t err)> _onErrorHandler;
+    std::function<err_t(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> _onReceiveHandler;
 };

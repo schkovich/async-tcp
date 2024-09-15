@@ -144,28 +144,12 @@ public:
             Serial.println("");
             return 0;
         }
-        _connect_pending = true;
-        _op_start_time = millis();
-        // will resume on timeout or when _connected or _notify_error fires
-        // give scheduled functions a chance to run (e.g. Ethernet uses recurrent)
-//        esp_delay(_timeout_ms, [this]() {
-//            return this->_connect_pending;
-//        }, 1);
-//        _connect_pending = false;c
+
         if (!_pcb) {
             DEBUGV(":cabrt\r\n");
             Serial.println("No PCB here,");
             return 0;
         }
-//        if (state() != ESTABLISHED) {
-//            Serial.println("Connection not established.");
-//            Serial.print(state());
-//            Serial.println("That above was state.");
-//            DEBUGV(":ctmo\r\n");
-//            abort();
-//            return 0;
-//        }
-//        Serial.println("Connection established.");
         return 1;
     }
 
@@ -470,6 +454,10 @@ public:
     void setOnErrorCallback(const std::function<void(err_t err)>& cb) {
         _errorCb = cb;  // Set the error callback
     }
+    
+    void setOnReceiveCallback(const std::function<err_t (struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> &cb) {
+        _receiveCb = cb;
+    }
 
 protected:
 
@@ -478,10 +466,11 @@ protected:
     }
 
     void _notify_error() {
-        if (_connect_pending || _send_waiting) {
+//        if (_connect_pending || _send_waiting) {
+        if (_send_waiting) {
             // resume connect or _write_from_source
             _send_waiting = false;
-            _connect_pending = false;
+//            _connect_pending = false;
             //esp_schedule();
         }
     }
@@ -671,6 +660,7 @@ protected:
             _rx_buf = pb;
             _rx_buf_offset = 0;
         }
+        _receiveCb(pcb, pb, err);
         return ERR_OK;
     }
 
@@ -690,17 +680,7 @@ protected:
         (void) err;
         (void) pcb;
         assert(pcb == _pcb);
-        if (_connect_pending) {
-            // resume connect
-            Serial.println("Calling connect callback.");
-            Serial.println("Connection state:");
-            Serial.print(state());
-            Serial.println("");
-            _connectCb();
-            _connect_pending = false;
-            //esp_schedule();
-        }
-        Serial.println("No pending connection. Skipping connect callback.");
+        _connectCb();
         return ERR_OK;
     }
 
@@ -720,14 +700,9 @@ protected:
     }
 
     static void _s_error(void *arg, err_t err) {
-        Serial.println("There was an error");
-        Serial.print(err);
-        Serial.println("");
         if (arg) {
-            Serial.println("Triggering _error");
             reinterpret_cast<AsyncTcpClientContext*>(arg)->_error(err);
         }
-        Serial.println("Skipping triggering _error");
     }
 
     static err_t _s_poll(void *arg, struct tcp_pcb *tpcb) {
@@ -748,10 +723,8 @@ protected:
 
     static err_t _s_connected(void* arg, struct tcp_pcb *pcb, err_t err) {
         if (arg) {
-            Serial.println("_s_connected fired with arguments.");
             return reinterpret_cast<AsyncTcpClientContext*>(arg)->_connected(pcb, err);
         } else {
-            Serial.println("_s_connected fired.");
             return ERR_OK;
         }
     }
@@ -771,11 +744,12 @@ private:
     uint32_t _timeout_ms = 5000;
     uint32_t _op_start_time = 0;
     bool _send_waiting = false;
-    bool _connect_pending = false;
+//    bool _connect_pending = false;
 
     int8_t _refcnt;
     AsyncTcpClientContext* _next;
     std::function<void()> _connectCb;
     std::function<void(err_t err)> _errorCb;
+    std::function<err_t (struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> _receiveCb;
     bool _sync;
 };

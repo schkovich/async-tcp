@@ -22,18 +22,18 @@
 #pragma once
 
 class AsyncTcpClientContext;
+
 class AsyncTcpClient;
 
-typedef void (*discard_cb_t)(void*, AsyncTcpClientContext*);
+typedef void (*discard_cb_t)(void *, AsyncTcpClientContext *);
 
 #include <cassert>
 #include <utility>
 #include "lwip/timeouts.h"
-
 //#include <esp_priv.h>
 //#include <coredecls.h>
 
-bool getDefaultPrivateGlobalSyncValue();
+//bool getDefaultSyncValue();
 //
 //template <typename T>
 //inline void esp_delay(const uint32_t timeout_ms, T&& blocked, const uint32_t intvl_ms) {
@@ -46,9 +46,10 @@ bool getDefaultPrivateGlobalSyncValue();
 
 class AsyncTcpClientContext {
 public:
-    AsyncTcpClientContext(tcp_pcb* pcb, discard_cb_t discard_cb, void* discard_cb_arg) :
-            _pcb(pcb), _rx_buf(nullptr), _rx_buf_offset(0), _discard_cb(discard_cb), _discard_cb_arg(discard_cb_arg), _refcnt(0), _next(nullptr),
-            _sync(::getDefaultPrivateGlobalSyncValue()) {
+    AsyncTcpClientContext(tcp_pcb *pcb, discard_cb_t discard_cb, void *discard_cb_arg) :
+            _pcb(pcb), _rx_buf(nullptr), _rx_buf_offset(0), _discard_cb(discard_cb), _discard_cb_arg(discard_cb_arg),
+            _ref_cnt(0), _next(nullptr),
+            _sync(AsyncTcpClient::getDefaultSync()) {
         tcp_setprio(_pcb, TCP_PRIO_MIN);
         tcp_arg(_pcb, this);
         tcp_recv(_pcb, &_s_recv);
@@ -60,7 +61,7 @@ public:
         //keepAlive();
     }
 
-    [[maybe_unused]] tcp_pcb* getPCB() {
+    [[maybe_unused]] tcp_pcb *getPCB() {
         return _pcb;
     }
 
@@ -100,23 +101,23 @@ public:
 
     ~AsyncTcpClientContext() = default;
 
-    [[nodiscard]] AsyncTcpClientContext* next() const {
+    [[nodiscard]] AsyncTcpClientContext *next() const {
         return _next;
     }
 
-    AsyncTcpClientContext* next(AsyncTcpClientContext* new_next) {
+    AsyncTcpClientContext *next(AsyncTcpClientContext *new_next) {
         _next = new_next;
         return _next;
     }
 
     void ref() {
-        ++_refcnt;
-        DEBUGV(":ref %d\r\n", _refcnt);
+        ++_ref_cnt;
+        DEBUGV(":ref %d\r\n", _ref_cnt);
     }
 
     void unref() {
-        DEBUGV(":ur %d\r\n", _refcnt);
-        if (--_refcnt == 0) {
+        DEBUGV(":ur %d\r\n", _ref_cnt);
+        if (--_ref_cnt == 0) {
             discard_received();
             close();
             if (_discard_cb) {
@@ -127,7 +128,7 @@ public:
         }
     }
 
-    int connect(ip_addr_t* addr, uint16_t port) {
+    int connect(ip_addr_t *addr, uint16_t port) {
         // note: not using `const ip_addr_t* addr` because
         // - `ip6_addr_assign_zone()` below modifies `*addr`
         // - caller's parameter `AsyncTcpClient::connect` is a local copy
@@ -176,18 +177,18 @@ public:
     }
 
     void setTimeout(int timeout_ms) {
-        if (timeout_ms < 100) {
-            // Crude logic to allow for seconds or milliseconds to work.  Timeouts of < 100ms don't make much sense, so assume the user meant seconds, not milliseconds
-            timeout_ms *= 1000;
-        }
+//        if (timeout_ms < 100) {
+//            // Crude logic to allow for seconds or milliseconds to work.  Timeouts of < 100ms don't make much sense, so assume the user meant seconds, not milliseconds
+//            timeout_ms *= 1000;
+//        }
         _timeout_ms = timeout_ms;
     }
 
-    [[maybe_unused]] [[nodiscard]] int getTimeout() const {
+    [[maybe_unused]] [[nodiscard]] uint32_t getTimeout() const {
         return _timeout_ms;
     }
 
-    [[nodiscard]] const ip_addr_t* getRemoteAddress() const {
+    [[nodiscard]] const ip_addr_t *getRemoteAddress() const {
         if (!_pcb) {
             return nullptr;
         }
@@ -203,7 +204,7 @@ public:
         return _pcb->remote_port;
     }
 
-    [[nodiscard]] const ip_addr_t* getLocalAddress() const {
+    [[nodiscard]] const ip_addr_t *getLocalAddress() const {
         if (!_pcb) {
             return nullptr;
         }
@@ -232,12 +233,12 @@ public:
             return 0;
         }
 
-        char c = reinterpret_cast<char*>(_rx_buf->payload)[_rx_buf_offset];
+        char c = reinterpret_cast<char *>(_rx_buf->payload)[_rx_buf_offset];
         _consume(1);
         return c;
     }
 
-    size_t read(char* dst, size_t size) {
+    size_t read(char *dst, size_t size) {
         if (!_rx_buf) {
             return 0;
         }
@@ -251,7 +252,7 @@ public:
             size_t buf_size = _rx_buf->len - _rx_buf_offset;
             size_t copy_size = (size < buf_size) ? size : buf_size;
             DEBUGV(":rdi %d, %d\r\n", buf_size, copy_size);
-            memcpy(dst, reinterpret_cast<char*>(_rx_buf->payload) + _rx_buf_offset, copy_size);
+            memcpy(dst, reinterpret_cast<char *>(_rx_buf->payload) + _rx_buf_offset, copy_size);
             dst += copy_size;
             _consume(copy_size);
             size -= copy_size;
@@ -265,7 +266,7 @@ public:
             return 0;
         }
 
-        return reinterpret_cast<char*>(_rx_buf->payload)[_rx_buf_offset];
+        return reinterpret_cast<char *>(_rx_buf->payload)[_rx_buf_offset];
     }
 
     size_t peekBytes(char *dst, size_t size) const {
@@ -280,7 +281,7 @@ public:
         size_t buf_size = _rx_buf->len - _rx_buf_offset;
         size_t copy_size = (size < buf_size) ? size : buf_size;
         DEBUGV(":rpi %d, %d\r\n", buf_size, copy_size);
-        memcpy(dst, reinterpret_cast<char*>(_rx_buf->payload) + _rx_buf_offset, copy_size);
+        memcpy(dst, reinterpret_cast<char *>(_rx_buf->payload) + _rx_buf_offset, copy_size);
         return copy_size;
     }
 
@@ -356,14 +357,14 @@ public:
         return _pcb->state;
     }
 
-    size_t write(const char* ds, const size_t dl) {
+    size_t write(const char *ds, const size_t dl) {
         if (!_pcb) {
             return 0;
         }
         return _write_from_source(ds, dl);
     }
 
-    size_t write(Stream& stream) {
+    size_t write(Stream &stream) {
         if (!_pcb) {
             return 0;
         }
@@ -377,7 +378,7 @@ public:
             }
             if (i) {
                 // Send as a single packet
-                int len = write((const char *)buff, i);
+                size_t len = write((const char *)buff, i);
                 sent += len;
                 if (len != (int)i) {
                     break; // Write error...
@@ -390,11 +391,13 @@ public:
         return sent;
     }
 
-    void keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC, uint16_t intv_sec = TCP_DEFAULT_KEEP_ALIVE_INTERVAL_SEC, uint8_t count = TCP_DEFAULT_KEEP_ALIVE_COUNT) {
+    void keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC,
+                   uint16_t intv_sec = TCP_DEFAULT_KEEP_ALIVE_INTERVAL_SEC,
+                   uint8_t count = TCP_DEFAULT_KEEP_ALIVE_COUNT) {
         if (idle_sec && intv_sec && count) {
             _pcb->so_options |= SOF_KEEPALIVE;
-            _pcb->keep_idle = (uint32_t)1000 * idle_sec;
-            _pcb->keep_intvl = (uint32_t)1000 * intv_sec;
+            _pcb->keep_idle = (uint32_t) 1000 * idle_sec;
+            _pcb->keep_intvl = (uint32_t) 1000 * intv_sec;
             _pcb->keep_cnt = count;
         } else {
             _pcb->so_options &= ~SOF_KEEPALIVE;
@@ -427,11 +430,11 @@ public:
 
     // return a pointer to available data buffer (size = peekAvailable())
     // semantic forbids any kind of read() before calling peekConsume()
-    const char* peekBuffer() {
+    const char *peekBuffer() {
         if (!_rx_buf) {
             return nullptr;
         }
-        return (const char*)_rx_buf->payload + _rx_buf_offset;
+        return (const char *) _rx_buf->payload + _rx_buf_offset;
     }
 
     // return number of byte accessible by peekBuffer()
@@ -447,16 +450,20 @@ public:
         _consume(consume);
     }
 
-    void setOnConnectCallback(const std::function<void()>& cb) {
+    void setOnConnectCallback(const std::function<void()> &cb) {
         _connectCb = cb;  // Set the success callback
     }
 
-    void setOnErrorCallback(const std::function<void(err_t err)>& cb) {
+    void setOnErrorCallback(const std::function<void(err_t err)> &cb) {
         _errorCb = cb;  // Set the error callback
     }
-    
-    void setOnReceiveCallback(const std::function<err_t (struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> &cb) {
+
+    void setOnReceiveCallback(const std::function<void(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> &cb) {
         _receiveCb = cb;
+    }
+
+    void setOnAckCallback(const std::function<void(struct tcp_pcb *tpcb, uint16_t len)> &cb) {
+        _ackCb = cb;
     }
 
 protected:
@@ -467,19 +474,19 @@ protected:
 
     void _notify_error() {
 //        if (_connect_pending || _send_waiting) {
-        if (_send_waiting) {
+//        if (_send_waiting) {
             // resume connect or _write_from_source
-            _send_waiting = false;
+//            _send_waiting = false;
 //            _connect_pending = false;
             //esp_schedule();
-        }
+//        }
     }
 
-    size_t _write_from_source(const char* ds, const size_t dl) {
+    size_t _write_from_source(const char *ds, const size_t dl) {
         assert(_datasource == nullptr);
-        assert(!_send_waiting);
+//        assert(!_send_waiting);
         _datasource = ds;
-        _datalen = dl;
+        _data_len = dl;
         _written = 0;
         _op_start_time = millis();
         do {
@@ -487,22 +494,22 @@ protected:
                 _op_start_time = millis();
             }
 
-            if (_written == _datalen || _is_timeout() || state() == CLOSED) {
+            if (_written == _data_len || _is_timeout() || state() == CLOSED) {
                 if (_is_timeout()) {
                     DEBUGV(":wtmo\r\n");
                 }
                 _datasource = nullptr;
-                _datalen = 0;
+                _data_len = 0;
                 break;
             }
 
-            _send_waiting = true;
+//            _send_waiting = true;
             // will resume on timeout or when _write_some_from_cb or _notify_error fires
             // give scheduled functions a chance to run (e.g. Ethernet uses recurrent)
 //            esp_delay(_timeout_ms, [this]() {
 //                return this->_send_waiting;
 //            }, 1);
-            _send_waiting = false;
+//            _send_waiting = false;
         } while (true);
 
         if (_sync) {
@@ -517,31 +524,29 @@ protected:
             return false;
         }
 
-        DEBUGV(":wr %d %d\r\n", _datalen - _written, _written);
+        DEBUGV(":wr %d %d\r\n", _data_len - _written, _written);
 
         bool has_written = false;
         int scale = 0;
 
-        while (_written < _datalen) {
+        while (_written < _data_len) {
             if (state() == CLOSED) {
                 return false;
             }
-            const auto remaining = _datalen - _written;
+            const auto remaining = _data_len - _written;
             size_t next_chunk_size;
-            {
-                if (!_pcb) {
-                    return false;
-                }
-                next_chunk_size = std::min((size_t)tcp_sndbuf(_pcb), remaining);
-                // Potentially reduce transmit size if we are tight on memory, but only if it doesn't return a 0 chunk size
-                if (next_chunk_size > (size_t)(1 << scale)) {
-                    next_chunk_size >>= scale;
-                }
+            if (state() == CLOSED) {
+                return false;
+            }
+            next_chunk_size = std::min((size_t) tcp_sndbuf(_pcb), remaining);
+            // Potentially reduce transmit size if we are tight on memory, but only if it doesn't return a 0 chunk size
+            if (next_chunk_size > (size_t) (1 << scale)) {
+                next_chunk_size >>= scale;
             }
             if (!next_chunk_size) {
-                break;
+                return false;
             }
-            const char* buf = _datasource + _written;
+            const char *buf = _datasource + _written;
 
             uint8_t flags = 0;
             if (next_chunk_size < remaining)
@@ -560,12 +565,13 @@ protected:
                 flags |= TCP_WRITE_FLAG_COPY;
             }
 
-            if (!_pcb) {
+            if (state() == CLOSED) {
                 return false;
             }
+
             err_t err = tcp_write(_pcb, buf, next_chunk_size, flags);
 
-            DEBUGV(":wrc %d %d %d\r\n", next_chunk_size, remaining, (int)err);
+            DEBUGV(":wrc %d %d %d\r\n", next_chunk_size, remaining, (int) err);
 
             if (err == ERR_OK) {
                 _written += next_chunk_size;
@@ -573,7 +579,7 @@ protected:
             } else if (err == ERR_MEM) {
                 if (scale < 4) {
                     // Retry sending at 1/2 the chunk size
-                    scale ++;
+                    scale++;
                 } else {
                     break;
                 }
@@ -584,7 +590,7 @@ protected:
             }
         }
 
-        if (has_written && _pcb) {
+        if (has_written && (state() != CLOSED)) {
             // lwIP's tcp_output doc: "Find out what we can send and send it"
             // *with respect to Nagle*
             // more info: https://lists.gnu.org/archive/html/lwip-users/2017-11/msg00134.html
@@ -594,19 +600,24 @@ protected:
         return has_written;
     }
 
-    void _write_some_from_cb() {
-        if (_send_waiting) {
-            // resume _write_from_source
-            _send_waiting = false;
-            //esp_schedule();
-        }
-    }
+//    void _write_some_from_cb() {
+//        if (_send_waiting) {
+//            // resume _write_from_source
+//            _send_waiting = false;
+//            //esp_schedule();
+//        }
+//    }
 
-    err_t _acked(tcp_pcb* pcb, uint16_t len) {
+    err_t _acked(tcp_pcb *pcb, uint16_t len) {
         (void) pcb;
         (void) len;
         DEBUGV(":ack %d\r\n", len);
-        _write_some_from_cb();
+//        Serial.print("ACK len: ");
+//        Serial.println(len);
+//        _write_some_from_cb();
+        _written += len;
+//        tcp_recved(pcb, len);
+        _ackCb(pcb, len);
         return ERR_OK;
     }
 
@@ -633,7 +644,7 @@ protected:
         }
     }
 
-    err_t _recv(tcp_pcb* pcb, pbuf* pb, err_t err) {
+    err_t _recv(tcp_pcb *pcb, pbuf *pb, err_t err) {
         (void) pcb;
         (void) err;
         if (pb == nullptr) {
@@ -667,6 +678,10 @@ protected:
     void _error(err_t err) {
         (void) err;
         DEBUGV(":er %d 0x%08lx\r\n", (int) err, (uint32_t) _datasource);
+        Serial.print("Error: ");
+        Serial.println(err);
+        Serial.print("Datasource: ");
+        Serial.println(_datasource);
         tcp_arg(_pcb, nullptr);
         tcp_sent(_pcb, nullptr);
         tcp_recv(_pcb, nullptr);
@@ -684,8 +699,7 @@ protected:
         return ERR_OK;
     }
 
-    err_t _poll(tcp_pcb*) {
-        _write_some_from_cb();
+    err_t _poll(tcp_pcb *) {
         return ERR_OK;
     }
 
@@ -693,7 +707,8 @@ protected:
     // In that case, just ignore the CB
     static err_t _s_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *pb, err_t err) {
         if (arg) {
-            return reinterpret_cast<AsyncTcpClientContext*>(arg)->_recv(tpcb, pb, err);
+            auto* context = reinterpret_cast<AsyncTcpClientContext*>(arg);
+            return context->_recv(tpcb, pb, err);
         } else {
             return ERR_OK;
         }
@@ -701,13 +716,13 @@ protected:
 
     static void _s_error(void *arg, err_t err) {
         if (arg) {
-            reinterpret_cast<AsyncTcpClientContext*>(arg)->_error(err);
+            reinterpret_cast<AsyncTcpClientContext *>(arg)->_error(err);
         }
     }
 
     static err_t _s_poll(void *arg, struct tcp_pcb *tpcb) {
         if (arg) {
-            return reinterpret_cast<AsyncTcpClientContext*>(arg)->_poll(tpcb);
+            return reinterpret_cast<AsyncTcpClientContext *>(arg)->_poll(tpcb);
         } else {
             return ERR_OK;
         }
@@ -715,41 +730,42 @@ protected:
 
     static err_t _s_acked(void *arg, struct tcp_pcb *tpcb, uint16_t len) {
         if (arg) {
-            return reinterpret_cast<AsyncTcpClientContext*>(arg)->_acked(tpcb, len);
+            return reinterpret_cast<AsyncTcpClientContext *>(arg)->_acked(tpcb, len);
         } else {
             return ERR_OK;
         }
     }
 
-    static err_t _s_connected(void* arg, struct tcp_pcb *pcb, err_t err) {
+    static err_t _s_connected(void *arg, struct tcp_pcb *pcb, err_t err) {
         if (arg) {
-            return reinterpret_cast<AsyncTcpClientContext*>(arg)->_connected(pcb, err);
+            return reinterpret_cast<AsyncTcpClientContext *>(arg)->_connected(pcb, err);
         } else {
             return ERR_OK;
         }
     }
 
 private:
-    tcp_pcb* _pcb;
+    tcp_pcb *_pcb;
 
-    pbuf* _rx_buf;
+    pbuf *_rx_buf;
     size_t _rx_buf_offset;
 
     discard_cb_t _discard_cb;
-    void* _discard_cb_arg;
+    void *_discard_cb_arg;
 
-    const char* _datasource = nullptr;
-    size_t _datalen = 0;
+    const char *_datasource = nullptr;
+    size_t _data_len = 0;
     size_t _written = 0;
     uint32_t _timeout_ms = 5000;
     uint32_t _op_start_time = 0;
     bool _send_waiting = false;
 //    bool _connect_pending = false;
 
-    int8_t _refcnt;
-    AsyncTcpClientContext* _next;
+    int8_t _ref_cnt;
+    AsyncTcpClientContext *_next;
     std::function<void()> _connectCb;
     std::function<void(err_t err)> _errorCb;
-    std::function<err_t (struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> _receiveCb;
+    std::function<void(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> _receiveCb;
+    std::function<void(struct tcp_pcb *tpcb, uint16_t len)> _ackCb;
     bool _sync;
 };

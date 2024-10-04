@@ -22,12 +22,12 @@
 
 //#include "WiFi.h"
 #include "LwipEthernet.h"
-#include "delay.cpp" // added
-//#include "lwip/opt.h"
-//#include "lwip/ip.h"
+//#include "delay.cpp" // added
+#include "lwip/opt.h"
+#include "lwip/ip.h"
 #include "lwip/tcp.h"
-//#include "lwip/inet.h"
-//#include "lwip/netif.h"
+#include "lwip/inet.h"
+#include "lwip/netif.h"
 #include "AsyncTcpClient.hpp"
 #include <AsyncTcpClientContext.hpp>
 //#include <StreamDev.h>
@@ -35,11 +35,6 @@
 uint16_t AsyncTcpClient::_localPort = 0;
 
 static bool defaultNoDelay = false; // false == Nagle enabled by default
-static bool defaultSync = false;
-
-bool getDefaultPrivateGlobalSyncValue() {
-    return defaultSync;
-}
 
 [[maybe_unused]] void AsyncTcpClient::setDefaultNoDelay(bool noDelay) {
     defaultNoDelay = noDelay;
@@ -58,19 +53,18 @@ bool getDefaultPrivateGlobalSyncValue() {
 }
 
 template<>
-AsyncTcpClient* SList<AsyncTcpClient>::_s_first = nullptr;
+AsyncTcpClient *SList<AsyncTcpClient>::_s_first = nullptr;
 
 
-AsyncTcpClient::AsyncTcpClient()
-        : _client(nullptr), _owned(nullptr) {
+AsyncTcpClient::AsyncTcpClient() : _ctx(nullptr), _owned(nullptr) {
     _timeout = 5000;
     AsyncTcpClient::_add(this);
 }
 
-AsyncTcpClient::AsyncTcpClient(AsyncTcpClientContext* client)
-        : _client(client), _owned(nullptr) {
+AsyncTcpClient::AsyncTcpClient(AsyncTcpClientContext *ctx): _ctx(ctx), _owned(nullptr) {
     _timeout = 5000;
-    _client->ref();
+    _ctx->ref();
+
     AsyncTcpClient::_add(this);
 
     setSync(defaultSync);
@@ -79,8 +73,8 @@ AsyncTcpClient::AsyncTcpClient(AsyncTcpClientContext* client)
 
 AsyncTcpClient::~AsyncTcpClient() {
     AsyncTcpClient::_remove(this);
-    if (_client) {
-        _client->unref();
+    if (_ctx) {
+        _ctx->unref();
     }
 }
 
@@ -88,32 +82,32 @@ AsyncTcpClient::~AsyncTcpClient() {
     return std::make_unique<AsyncTcpClient>(*this);
 }
 
-AsyncTcpClient::AsyncTcpClient(const AsyncTcpClient& other)  : Client(other), SList(other) {
-    _client = other._client;
+AsyncTcpClient::AsyncTcpClient(const AsyncTcpClient &other) : Client(other), SList(other) {
+    _ctx = other._ctx;
     _timeout = other._timeout;
     _localPort = AsyncTcpClient::_localPort;
     _owned = other._owned;
-    if (_client) {
-        _client->ref();
+    if (_ctx) {
+        _ctx->ref();
     }
     AsyncTcpClient::_add(this);
 }
 
-AsyncTcpClient& AsyncTcpClient::operator=(const AsyncTcpClient& other) {
-    if (_client) {
-        _client->unref();
+AsyncTcpClient &AsyncTcpClient::operator=(const AsyncTcpClient &other) {
+    if (_ctx) {
+        _ctx->unref();
     }
-    _client = other._client;
+    _ctx = other._ctx;
     _timeout = other._timeout;
     _localPort = AsyncTcpClient::_localPort;
     _owned = other._owned;
-    if (_client) {
-        _client->ref();
+    if (_ctx) {
+        _ctx->ref();
     }
     return *this;
 }
 
-int AsyncTcpClient::connect(const char* host, uint16_t port) {
+int AsyncTcpClient::connect(const char *host, uint16_t port) {
     IPAddress remote_addr;
     if (::hostByName(host, remote_addr, _timeout)) { // from WiFiClient
         return connect(remote_addr, port);
@@ -121,18 +115,18 @@ int AsyncTcpClient::connect(const char* host, uint16_t port) {
     return 0;
 }
 
-int AsyncTcpClient::connect(const String& host, uint16_t port) {
+int AsyncTcpClient::connect(const String &host, uint16_t port) {
     return connect(host.c_str(), port);
 }
 
 int AsyncTcpClient::connect(IPAddress ip, uint16_t port) {
-    if (_client) {
+    if (_ctx) {
         stop();
-        _client->unref();
-        _client = nullptr;
+        _ctx->unref();
+        _ctx = nullptr;
     }
 
-    tcp_pcb* pcb = tcp_new();
+    tcp_pcb *pcb = tcp_new();
     if (!pcb) {
         Serial.println("No PCB");
         return 0;
@@ -142,17 +136,23 @@ int AsyncTcpClient::connect(IPAddress ip, uint16_t port) {
         pcb->local_port = _localPort++;
     }
 
-    _client = new AsyncTcpClientContext(pcb, nullptr, nullptr);
-    _client->ref();
-    _client->setTimeout(_timeout);
-    _client->setOnConnectCallback(_onConnectHandler);
-    _client->setOnErrorCallback(_onErrorHandler);
-    _client->setOnReceiveCallback(_onReceiveHandler);
-    int res = _client->connect(ip, port);
+    _ctx = new AsyncTcpClientContext(pcb, nullptr, nullptr);
+    _ctx->ref();
+    _ctx->setTimeout(_timeout);
+    _ctx->setOnConnectCallback([this] { _onConnectCallback(); });
+    _ctx->setOnErrorCallback([this](auto &&PH1) { _onErrorCallback(std::forward<decltype(PH1)>(PH1)); });
+    _ctx->setOnReceiveCallback([this](auto &&PH1, auto &&PH2, auto &&PH3) {
+        _onReceiveCallback(std::forward<decltype(PH1)>(PH1), std::forward<decltype(PH2)>(PH2),
+                           std::forward<decltype(PH3)>(PH3));
+    });
+    _ctx->setOnAckCallback([this](auto &&PH1, auto &&PH2) {
+        _onAckCallback(std::forward<decltype(PH1)>(PH1), std::forward<decltype(PH2)>(PH2));
+    });
+    int res = _ctx->connect(ip, port);
     if (res == 0) {
         Serial.println("Client did not menage to connect.");
-        _client->unref();
-        _client = nullptr;
+        _ctx->unref();
+        _ctx = nullptr;
         return 0;
     }
 
@@ -163,35 +163,35 @@ int AsyncTcpClient::connect(IPAddress ip, uint16_t port) {
 }
 
 void AsyncTcpClient::setNoDelay(bool nodelay) {
-    if (!_client) {
+    if (!_ctx) {
         return;
     }
-    _client->setNoDelay(nodelay);
+    _ctx->setNoDelay(nodelay);
 }
 
 [[maybe_unused]] bool AsyncTcpClient::getNoDelay() const {
-    if (!_client) {
+    if (!_ctx) {
         return false;
     }
-    return _client->getNoDelay();
+    return _ctx->getNoDelay();
 }
 
 void AsyncTcpClient::setSync(bool sync) {
-    if (!_client) {
+    if (!_ctx) {
         return;
     }
-    _client->setSync(sync);
+    _ctx->setSync(sync);
 }
 
 [[maybe_unused]] bool AsyncTcpClient::getSync() const {
-    if (!_client) {
+    if (!_ctx) {
         return false;
     }
-    return _client->getSync();
+    return _ctx->getSync();
 }
 
 int AsyncTcpClient::availableForWrite() {
-    return _client ? _client->availableForWrite() : 0;
+    return _ctx ? _ctx->availableForWrite() : 0;
 }
 
 size_t AsyncTcpClient::write(uint8_t b) {
@@ -199,28 +199,28 @@ size_t AsyncTcpClient::write(uint8_t b) {
 }
 
 size_t AsyncTcpClient::write(const uint8_t *buf, size_t size) {
-    if (!_client || !size) {
+    if (!_ctx || !size) {
         return 0;
     }
-    _client->setTimeout(_timeout);
-    return _client->write((const char*)buf, size);
+    _ctx->setTimeout(_timeout);
+    return _ctx->write((const char *) buf, size);
 }
 
-size_t AsyncTcpClient::write(Stream& stream) {
-    if (!_client || !stream.available()) {
+size_t AsyncTcpClient::write(Stream &stream) {
+    if (!_ctx || !stream.available()) {
         return 0;
     }
-    _client->setTimeout(_timeout);
-    return _client->write(stream);
+    _ctx->setTimeout(_timeout);
+    return _ctx->write(stream);
 }
 
 int AsyncTcpClient::available() {
-    if (!_client) {
-        Serial.println("Man, there is no client!");
+    if (!_ctx) {
+        Serial.println("Man, there is no ctx!");
         return 0;
     }
 
-    int result = _client->getSize();
+    int result = _ctx->getSize();
 
     return result;
 }
@@ -229,16 +229,15 @@ int AsyncTcpClient::read() {
     if (!available()) {
         return -1;
     }
-
-    return _client->read();
+    return _ctx->read();
 }
 
-int AsyncTcpClient::read(uint8_t* buf, size_t size) {
-    return (int)_client->read((char*)buf, size);
+int AsyncTcpClient::read(uint8_t *buf, size_t size) {
+    return (int) _ctx->read((char *) buf, size);
 }
 
-int AsyncTcpClient::read(char* buf, size_t size) {
-    return (int)_client->read(buf, size);
+int AsyncTcpClient::read(char *buf, size_t size) {
+    return (int) _ctx->read(buf, size);
 }
 
 int AsyncTcpClient::peek() {
@@ -246,13 +245,13 @@ int AsyncTcpClient::peek() {
         return -1;
     }
 
-    return _client->peek();
+    return _ctx->peek();
 }
 
 size_t AsyncTcpClient::peekBytes(uint8_t *buffer, size_t length) {
     size_t count;
 
-    if (!_client) {
+    if (!_ctx) {
         return 0;
     }
 
@@ -267,45 +266,45 @@ size_t AsyncTcpClient::peekBytes(uint8_t *buffer, size_t length) {
         count = length;
     }
 
-    return _client->peekBytes((char *)buffer, count);
+    return _ctx->peekBytes((char *) buffer, count);
 }
 
 bool AsyncTcpClient::flush(unsigned int maxWaitMs) {
-    if (!_client) {
+    if (!_ctx) {
         return true;
     }
 
     if (maxWaitMs == 0) {
         maxWaitMs = ASYNC_TCP_CLIENT_MAX_FLUSH_WAIT_MS;
     }
-    return _client->wait_until_acked(maxWaitMs);
+    return _ctx->wait_until_acked(maxWaitMs);
 }
 
 bool AsyncTcpClient::stop(unsigned int maxWaitMs) {
-    if (!_client) {
+    if (!_ctx) {
         return true;
     }
 
     bool ret = flush(maxWaitMs); // virtual, may be ssl's
-    if (_client->close() != ERR_OK) {
+    if (_ctx->close() != ERR_OK) {
         ret = false;
     }
     return ret;
 }
 
 uint8_t AsyncTcpClient::connected() {
-    if (!_client || _client->state() == CLOSED) {
+    if (!_ctx || _ctx->state() == CLOSED) {
         return 0;
     }
 
-    return _client->state() == ESTABLISHED || available();
+    return _ctx->state() == ESTABLISHED || available();
 }
 
 uint8_t AsyncTcpClient::status() {
-    if (!_client) {
+    if (!_ctx) {
         return CLOSED;
     }
-    return _client->state();
+    return _ctx->state();
 }
 
 AsyncTcpClient::operator bool() {
@@ -313,51 +312,51 @@ AsyncTcpClient::operator bool() {
 }
 
 [[maybe_unused]] IPAddress AsyncTcpClient::remoteIP() {
-    if (!_client || !_client->getRemoteAddress()) {
+    if (!_ctx || !_ctx->getRemoteAddress()) {
         return {0};
     }
 
-    return _client->getRemoteAddress();
+    return _ctx->getRemoteAddress();
 }
 
 [[maybe_unused]] uint16_t AsyncTcpClient::remotePort() {
-    if (!_client) {
+    if (!_ctx) {
         return 0;
     }
 
-    return _client->getRemotePort();
+    return _ctx->getRemotePort();
 }
 
 IPAddress AsyncTcpClient::localIP() {
-    if (!_client || !_client->getLocalAddress()) {
+    if (!_ctx || !_ctx->getLocalAddress()) {
         return {0};
     }
 
-    return {_client->getLocalAddress()};
+    return {_ctx->getLocalAddress()};
 }
 
 [[maybe_unused]] uint16_t AsyncTcpClient::localPort() {
-    if (!_client) {
+    if (!_ctx) {
         return 0;
     }
 
-    return _client->getLocalPort();
+    return _ctx->getLocalPort();
 }
 
 [[maybe_unused]] void AsyncTcpClient::stopAll() {
-    for (AsyncTcpClient* it = _s_first; it; it = it->_next) {
+    for (AsyncTcpClient *it = _s_first; it; it = it->_next) {
         it->stop();
     }
 }
 
 
-[[maybe_unused]] void AsyncTcpClient::stopAllExcept(AsyncTcpClient* except) {
+[[maybe_unused]] void AsyncTcpClient::stopAllExcept(AsyncTcpClient *except) {
     // Stop all will look at the lowest-level wrapper connections only
     while (except->_owned) {
         except = except->_owned;
     }
-    for (AsyncTcpClient* it = _s_first; it; it = it->_next) {
-        AsyncTcpClient* conn = it;
+    for (AsyncTcpClient *it = _s_first; it; it = it->_next) {
+        AsyncTcpClient *conn = it;
         // Find the lowest-level owner of the current list entry
         while (conn->_owned) {
             conn = conn->_owned;
@@ -369,23 +368,23 @@ IPAddress AsyncTcpClient::localIP() {
 }
 
 void AsyncTcpClient::keepAlive(uint16_t idle_sec, uint16_t intv_sec, uint8_t count) {
-    _client->keepAlive(idle_sec, intv_sec, count);
+    _ctx->keepAlive(idle_sec, intv_sec, count);
 }
 
 [[maybe_unused]] bool AsyncTcpClient::isKeepAliveEnabled() const {
-    return _client->isKeepAliveEnabled();
+    return _ctx->isKeepAliveEnabled();
 }
 
 [[maybe_unused]] uint16_t AsyncTcpClient::getKeepAliveIdle() const {
-    return _client->getKeepAliveIdle();
+    return _ctx->getKeepAliveIdle();
 }
 
 [[maybe_unused]] uint16_t AsyncTcpClient::getKeepAliveInterval() const {
-    return _client->getKeepAliveInterval();
+    return _ctx->getKeepAliveInterval();
 }
 
 [[maybe_unused]] uint8_t AsyncTcpClient::getKeepAliveCount() const {
-    return _client->getKeepAliveCount();
+    return _ctx->getKeepAliveCount();
 }
 
 [[maybe_unused]] int8_t AsyncTcpClient::_s_connected(void *arg, void *tpcb, int8_t err) {
@@ -406,15 +405,27 @@ int8_t AsyncTcpClient::_connected(void *tpcb, int8_t err) {
 //    _error is a protected member of AsyncTcpContext
 }
 
-void AsyncTcpClient::setOnConnectCallback(const std::function<void()>& callback)
-{
-    _onConnectHandler = callback;
+void AsyncTcpClient::_onConnectCallback() {
+//    ethernet_arch_lwip_begin();
+    IPAddress remote_ip = remoteIP();
+    Serial.print("Connection to ");
+    Serial.print(remote_ip);
+    Serial.println(" established successfully!");
+//    ethernet_arch_lwip_end();
 }
 
-void AsyncTcpClient::setOnErrorCallback(const std::function<void(err_t err)> &callback) {
-    _onErrorHandler = callback;
+void AsyncTcpClient::_onErrorCallback(err_t err) {
+    Serial.print("The ctx failed with the error code: ");
+    Serial.println(err);
+    _ctx->close();
+    _ctx = nullptr;
 }
 
-void AsyncTcpClient::setOnReceiveCallback(const std::function<err_t (struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> &callback) {
-    _onReceiveHandler = callback;
+void AsyncTcpClient::_onReceiveCallback(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err) {
+//    Serial.print("Bytes acked: ");
+}
+
+void AsyncTcpClient::_onAckCallback(struct tcp_pcb *tpcb, uint16_t len) {
+//    Serial.print("Bytes acked: ");
+//    Serial.println(tpcb->bytes_acked);
 }

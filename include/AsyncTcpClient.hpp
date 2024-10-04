@@ -27,6 +27,7 @@
 #include "Client.h"
 #include "IPAddress.h"
 #include "include/slist.h"
+#include "pico/async_context_threadsafe_background.h"
 
 #ifndef TCP_MSS
 #define TCP_MSS 1460 // lwip1.4
@@ -41,6 +42,8 @@
 
 class AsyncTcpClientContext;
 class WiFiServer; // Is it needed and used?
+
+using namespace std::placeholders;
 
 class AsyncTcpClient : public Client, public SList<AsyncTcpClient> {
 protected:
@@ -67,7 +70,7 @@ public:
     int connect(IPAddress ip, uint16_t port) override;
     int connect(const char *host, uint16_t port) override;
     virtual int connect(const String& host, uint16_t port);
-    size_t write(uint8_t) override;
+    size_t write(uint8_t b) override;
     size_t write(const uint8_t *buf, size_t size) override;
     size_t write(Stream& stream);
 
@@ -114,7 +117,7 @@ public:
 
     [[maybe_unused]] static void stopAllExcept(AsyncTcpClient * c);
 
-    void     keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC, uint16_t intv_sec = TCP_DEFAULT_KEEP_ALIVE_INTERVAL_SEC, uint8_t count = TCP_DEFAULT_KEEP_ALIVE_COUNT);
+    void keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC, uint16_t intv_sec = TCP_DEFAULT_KEEP_ALIVE_INTERVAL_SEC, uint8_t count = TCP_DEFAULT_KEEP_ALIVE_COUNT);
 
     [[maybe_unused]] [[nodiscard]] bool isKeepAliveEnabled() const;
 
@@ -149,25 +152,6 @@ public:
 
     [[maybe_unused]] [[nodiscard]] bool getSync() const;
     void setSync(bool sync);
-    void setOnConnectCallback(const std::function<void()> &callback);
-    void setOnErrorCallback(const std::function<void(err_t)> &callback);
-    void setOnReceiveCallback(const std::function<err_t (struct tcp_pcb *, struct pbuf *, err_t)> &callback);
-
-    // peek buffer API is present
-    //virtual bool hasPeekBufferAPI () const override;
-
-    // return number of byte accessible by peekBuffer()
-    //virtual size_t peekAvailable () override;
-
-    // return a pointer to available data buffer (size = peekAvailable())
-    // semantic forbids any kind of read() before calling peekConsume()
-    //virtual const char* peekBuffer () override;
-
-    // consume bytes after use (see peekBuffer)
-    //virtual void peekConsume (size_t consume) override;
-
-    //virtual bool outputCanTimeout () override { return connected(); }
-    //virtual bool inputCanTimeout () override { return connected(); }
 
 protected:
 
@@ -179,10 +163,13 @@ protected:
 
     [[maybe_unused]] void _err(int8_t err);
 
-    AsyncTcpClientContext*  _client;
+    inline static bool defaultSync = true;
+    AsyncTcpClientContext*  _ctx;
     AsyncTcpClient* _owned;
     static uint16_t _localPort;
-    std::function<void()> _onConnectHandler;
-    std::function<void(err_t err)> _onErrorHandler;
-    std::function<err_t(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> _onReceiveHandler;
+
+    void _onConnectCallback();
+    void _onErrorCallback(err_t err);
+    void _onReceiveCallback(struct tcp_pcb *tpcfb, struct pbuf *pb, err_t err);
+    void _onAckCallback(struct tcp_pcb *tpcb, uint16_t len);
 };

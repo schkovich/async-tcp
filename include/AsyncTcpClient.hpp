@@ -210,7 +210,7 @@ namespace AsyncTcp {
          * the connection request to the IP-based `connect()` method, which handles resource and
          * context management.
          *
-         * @param host The hostname of the remote server (as a `const char*`).
+         * @param host The hostname of the remote server (as a `AString`).
          * @param port The port number of the remote host.
          * @return int Returns 1 on successful connection, or 0 if the hostname could not be resolved or the connection fails.
          *

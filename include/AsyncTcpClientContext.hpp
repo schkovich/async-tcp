@@ -216,36 +216,67 @@ namespace AsyncTcp {
             return _rx_buf->tot_len - _rx_buf_offset;
         }
 
+        /**
+         * @brief Reads a single byte from the internal receive buffer.
+         *
+         * This method retrieves one byte from the internal receive buffer and advances
+         * the buffer offset by one. If the receive buffer is empty, the method returns 0.
+         *
+         * @return The byte read from the receive buffer, or 0 if the buffer is empty.
+         *
+         * @note This method is not thread-safe. Ensure that appropriate synchronization
+         * mechanisms are used if this method is called from multiple threads.
+         *
+         * @warning If the receive buffer is empty, this method will return 0.
+         */
         char read() {
-            if (!_rx_buf) {
-                return 0;
+            char c = peek();
+            if (c != 0) {
+                _consume(1);
             }
-
-            char c = reinterpret_cast<char *>(_rx_buf->payload)[_rx_buf_offset];
-            _consume(1);
             return c;
         }
 
+        /**
+         * @brief Reads data from the receive buffer into the provided destination buffer.
+         *
+         * This method attempts to read up to `size` bytes from the internal receive buffer
+         * into the buffer pointed to by `dst`. The actual number of bytes read may be less
+         * than `size` if there is less data available in the receive buffer.
+         *
+         * @param dst Pointer to the destination buffer where the data will be copied.
+         * @param size The maximum number of bytes to read into the destination buffer.
+         * @return The actual number of bytes read into the destination buffer.
+         *
+         * @note This method is not thread-safe. Ensure that appropriate synchronization
+         * mechanisms are used if this method is called from multiple threads.
+         *
+         * @warning If the receive buffer is empty, this method will return 0.
+         */
         size_t read(char *dst, size_t size) {
-            if (!_rx_buf) {
+            if (!dst || size == 0) {
+                DEBUGV(":read invalid parameters\r\n");
                 return 0;
             }
 
-            size_t max_size = _rx_buf->tot_len - _rx_buf_offset;
-            size = (size < max_size) ? size : max_size;
+            size_t max_size = getSize();
+            size = std::min(size, max_size);
 
             DEBUGV(":rd %d, %d, %d\r\n", size, _rx_buf->tot_len, _rx_buf_offset);
             size_t size_read = 0;
-            while (size) {
-                size_t buf_size = _rx_buf->len - _rx_buf_offset;
-                size_t copy_size = (size < buf_size) ? size : buf_size;
-                DEBUGV(":rdi %d, %d\r\n", buf_size, copy_size);
-                memcpy(dst, reinterpret_cast<char *>(_rx_buf->payload) + _rx_buf_offset, copy_size);
+
+            while (size > 0) {
+                size_t copy_size = peekBytes(dst, size);
+                if (copy_size == 0) {
+                    DEBUGV(":read no more data to copy\r\n");
+                    break;
+                }
                 dst += copy_size;
                 _consume(copy_size);
                 size -= copy_size;
                 size_read += copy_size;
             }
+
             return size_read;
         }
 
@@ -262,7 +293,7 @@ namespace AsyncTcp {
                 return 0;
             }
 
-            size_t max_size = _rx_buf->tot_len - _rx_buf_offset;
+            size_t max_size = getSize();
             size = (size < max_size) ? size : max_size;
 
             DEBUGV(":pd %d, %d, %d\r\n", size, _rx_buf->tot_len, _rx_buf_offset);
@@ -271,6 +302,28 @@ namespace AsyncTcp {
             DEBUGV(":rpi %d, %d\r\n", buf_size, copy_size);
             memcpy(dst, reinterpret_cast<char *>(_rx_buf->payload) + _rx_buf_offset, copy_size);
             return copy_size;
+        }
+
+        // return a pointer to available data buffer (size = peekAvailable())
+        // semantic forbids any kind of read() before calling peekConsume()
+        const char *peekBuffer() {
+            if (!_rx_buf) {
+                return nullptr;
+            }
+            return (const char *) _rx_buf->payload + _rx_buf_offset;
+        }
+
+        // return number of byte accessible by peekBuffer()
+        size_t peekAvailable() {
+            if (!_rx_buf) {
+                return 0;
+            }
+            return _rx_buf->len - _rx_buf_offset;
+        }
+
+        // consume bytes after use (see peekBuffer)
+        void peekConsume(size_t consume) {
+            _consume(consume);
         }
 
         void discard_received() {
@@ -414,28 +467,6 @@ namespace AsyncTcp {
 
         void setSync(bool sync) {
             _sync = sync;
-        }
-
-        // return a pointer to available data buffer (size = peekAvailable())
-        // semantic forbids any kind of read() before calling peekConsume()
-        const char *peekBuffer() {
-            if (!_rx_buf) {
-                return nullptr;
-            }
-            return (const char *) _rx_buf->payload + _rx_buf_offset;
-        }
-
-        // return number of byte accessible by peekBuffer()
-        size_t peekAvailable() {
-            if (!_rx_buf) {
-                return 0;
-            }
-            return _rx_buf->len - _rx_buf_offset;
-        }
-
-        // consume bytes after use (see peekBuffer)
-        void peekConsume(size_t consume) {
-            _consume(consume);
         }
 
         void setOnConnectCallback(const std::function<void()> &cb) {
@@ -746,7 +777,7 @@ namespace AsyncTcp {
         size_t _written = 0;
         uint32_t _timeout_ms = 5000;
         uint32_t _op_start_time = 0;
-        bool _send_waiting = false;
+//        bool _send_waiting = false;
 //    bool _connect_pending = false;
 
         int8_t _ref_cnt;

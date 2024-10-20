@@ -419,6 +419,10 @@ namespace AsyncTcp {
 //    _error is a protected member of AsyncTcpContext
     }
 
+    void AsyncTcpClient::setOnReceiveCallback(const std::function<void(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> &cb) {
+        _receiveCallback = cb;
+    }
+
     void AsyncTcpClient::_onConnectCallback() {
 //    ethernet_arch_lwip_begin();
         AIPAddress remote_ip = remoteIP();
@@ -436,11 +440,11 @@ namespace AsyncTcp {
     }
 
     void AsyncTcpClient::_onReceiveCallback(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err) {
-//    Serial.print("Bytes acked: ");
+        if (_receiveCallback) {
+            _receiveCallback(tpcb, pb, err);
+        }
     }
 
     void AsyncTcpClient::_onAckCallback(struct tcp_pcb *tpcb, uint16_t len) {
-//    Serial.print("Bytes acked: ");
-//    Serial.println(tpcb->bytes_acked);
     }
 } // namespace AsyncTcp

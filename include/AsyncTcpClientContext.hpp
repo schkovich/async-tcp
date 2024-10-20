@@ -26,6 +26,7 @@
 #include "lwip/timeouts.h"
 //#include <esp_priv.h>
 //#include <coredecls.h>
+#include "Arduino.h"
 
 namespace AsyncTcp {
 
@@ -48,7 +49,6 @@ namespace AsyncTcp {
             tcp_sent(_pcb, &_s_acked);
             tcp_err(_pcb, &_s_error);
             tcp_poll(_pcb, &_s_poll, 1);
-
             // keep-alive not enabled by default
             //keepAlive();
         }
@@ -259,20 +259,28 @@ namespace AsyncTcp {
                 return 0;
             }
 
+            // Get the total amount of data available for reading
             size_t max_size = getSize();
+            // Limit size to available data
             size = std::min(size, max_size);
 
             DEBUGV(":rd %d, %d, %d\r\n", size, _rx_buf->tot_len, _rx_buf_offset);
             size_t size_read = 0;
 
+            // Keep reading from the buffer while there's data to read
             while (size > 0) {
+                 // Use peekBytes to copy data into the destination buffer
                 size_t copy_size = peekBytes(dst, size);
                 if (copy_size == 0) {
                     DEBUGV(":read no more data to copy\r\n");
                     break;
                 }
                 dst += copy_size;
+
+                // Mark the copied bytes as consumed
                 _consume(copy_size);
+
+                // Reduce the remaining size and update the total size read
                 size -= copy_size;
                 size_read += copy_size;
             }
@@ -492,6 +500,7 @@ namespace AsyncTcp {
         }
 
         void _notify_error() {
+            Serial.println("Someone is saying that there is an error.");
 //        if (_connect_pending || _send_waiting) {
 //        if (_send_waiting) {
             // resume connect or _write_from_source

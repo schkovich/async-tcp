@@ -419,7 +419,7 @@ namespace AsyncTcp {
 //    _error is a protected member of AsyncTcpContext
     }
 
-    void AsyncTcpClient::setOnReceiveCallback(const std::function<void(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> &cb) {
+    void AsyncTcpClient::setOnReceiveCallback(const std::function<void(int * size)> &cb) {
         _receiveCallback = cb;
     }
 
@@ -440,8 +440,10 @@ namespace AsyncTcp {
     }
 
     void AsyncTcpClient::_onReceiveCallback(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err) {
+        assert(tpcb == _ctx->getPCB());
+        int size = available();
         if (_receiveCallback) {
-            _receiveCallback(tpcb, pb, err);
+            _receiveCallback(&size);
         }
     }
 

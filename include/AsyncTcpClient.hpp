@@ -320,7 +320,7 @@ namespace AsyncTcp {
 
         void setSync(bool sync);
 
-        void setOnReceiveCallback(const std::function<void(int * size)> &cb);
+        void setOnReceiveCallback(const std::function<void(std::unique_ptr<int>)> &cb);
 
     protected:
 
@@ -337,13 +337,13 @@ namespace AsyncTcp {
         AsyncTcpClient *_owned;
         static uint16_t _localPort;
 
-        std::function<void(int * size)> _receiveCallback;
+        std::function<void(std::unique_ptr<int>)> _receiveCallback;
 
         void _onConnectCallback();
 
         void _onErrorCallback(err_t err);
 
-        void _onReceiveCallback(struct tcp_pcb *tpcfb, struct pbuf *pb, err_t err);
+        void _onReceiveCallback(std::unique_ptr<int> size);
 
         void _onAckCallback(struct tcp_pcb *tpcb, uint16_t len);
     };

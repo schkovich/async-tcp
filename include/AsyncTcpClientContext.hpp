@@ -485,7 +485,7 @@ namespace AsyncTcp {
             _errorCb = cb;  // Set the error callback
         }
 
-        void setOnReceiveCallback(const std::function<void(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> &cb) {
+        void setOnReceiveCallback(const std::function<void(std::unique_ptr<int>)> &cb) {
             _receiveCb = cb;
         }
 
@@ -500,14 +500,7 @@ namespace AsyncTcp {
         }
 
         void _notify_error() {
-            Serial.println("Someone is saying that there is an error.");
-//        if (_connect_pending || _send_waiting) {
-//        if (_send_waiting) {
-            // resume connect or _write_from_source
-//            _send_waiting = false;
-//            _connect_pending = false;
-            //esp_schedule();
-//        }
+            // @todo: consider removing
         }
 
         size_t _write_from_source(const char *ds, const size_t dl) {
@@ -699,7 +692,10 @@ namespace AsyncTcp {
                 _rx_buf = pb;
                 _rx_buf_offset = 0;
             }
-            _receiveCb(pcb, pb, err);
+
+            std::unique_ptr<int> size = std::make_unique<int>(getSize());
+            _receiveCb(std::move(size));
+
             return ERR_OK;
         }
 
@@ -793,7 +789,7 @@ namespace AsyncTcp {
         AsyncTcpClientContext *_next;
         std::function<void()> _connectCb;
         std::function<void(err_t err)> _errorCb;
-        std::function<void(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err)> _receiveCb;
+        std::function<void(std::unique_ptr<int>)> _receiveCb;
         std::function<void(struct tcp_pcb *tpcb, uint16_t len)> _ackCb;
         bool _sync;
     };

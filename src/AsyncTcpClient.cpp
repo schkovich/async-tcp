@@ -155,9 +155,8 @@ namespace AsyncTcp {
         _ctx->setTimeout(_timeout);
         _ctx->setOnConnectCallback([this] { _onConnectCallback(); });
         _ctx->setOnErrorCallback([this](auto &&PH1) { _onErrorCallback(std::forward<decltype(PH1)>(PH1)); });
-        _ctx->setOnReceiveCallback([this](auto &&PH1, auto &&PH2, auto &&PH3) {
-            _onReceiveCallback(std::forward<decltype(PH1)>(PH1), std::forward<decltype(PH2)>(PH2),
-                               std::forward<decltype(PH3)>(PH3));
+        _ctx->setOnReceiveCallback([this](auto &&PH1) {
+            _onReceiveCallback(std::forward<decltype(PH1)>(PH1));
         });
         _ctx->setOnAckCallback([this](auto &&PH1, auto &&PH2) {
             _onAckCallback(std::forward<decltype(PH1)>(PH1), std::forward<decltype(PH2)>(PH2));
@@ -419,7 +418,7 @@ namespace AsyncTcp {
 //    _error is a protected member of AsyncTcpContext
     }
 
-    void AsyncTcpClient::setOnReceiveCallback(const std::function<void(int * size)> &cb) {
+    void AsyncTcpClient::setOnReceiveCallback(const std::function<void(std::unique_ptr<int>)> &cb) {
         _receiveCallback = cb;
     }
 
@@ -439,11 +438,9 @@ namespace AsyncTcp {
         _ctx = nullptr;
     }
 
-    void AsyncTcpClient::_onReceiveCallback(struct tcp_pcb *tpcb, struct pbuf *pb, err_t err) {
-        assert(tpcb == _ctx->getPCB());
-        int size = available();
+    void AsyncTcpClient::_onReceiveCallback(std::unique_ptr<int> size) {
         if (_receiveCallback) {
-            _receiveCallback(&size);
+            _receiveCallback(std::move(size));
         }
     }
 

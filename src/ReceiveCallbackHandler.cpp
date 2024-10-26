@@ -18,16 +18,16 @@ namespace AsyncTcp {
      * - Notifies `_ctx` of pending work for `_worker`.
      */
     void ReceiveCallbackHandler::handleEvent() {
-        _data = std::make_unique<WorkerData>();  // Allocate WorkerData
+        std::unique_ptr<WorkerData> data = std::make_unique<WorkerData>();  // Allocate WorkerData
 
         // Capture the available size of data from the client
         std::unique_ptr<int> size = std::make_unique<int>(_client->available());
 
-        _data->read_size = std::move(size);       // Set read size in WorkerData
-        _data->client = _client;                  // Set the client reference in WorkerData
+        data->read_size = std::move(size);       // Set read size in WorkerData
+        data->client = _client;                  // Set the client reference in WorkerData
 
         // Pass WorkerData to the worker and notify context of pending work
-        _worker->setWorkerData(std::move(_data));
+        _worker->setWorkerData(std::move(data));
         _ctx->setWorkPending(*_worker);
     }
 

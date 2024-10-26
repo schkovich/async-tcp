@@ -83,7 +83,6 @@ namespace AsyncTcp {
 
         std::shared_ptr<ContextManager> _ctx;    /**< Shared pointer to a `ContextManager` for managing the context. */
         std::shared_ptr<Worker> _worker;         /**< Shared pointer to a `Worker` for managing worker-specific tasks. */
-        std::unique_ptr<WorkerData> _data;       /**< Unique pointer to `WorkerData`, containing core worker data. */
         AsyncTcpClient* _client = nullptr;       /**< Raw pointer to the `AsyncTcpClient` for client interactions. */
     };
 }

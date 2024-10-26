@@ -20,16 +20,10 @@
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "LwipEthernet.h"
-//#include "delay.cpp" // added
-#include "lwip/opt.h"
-#include "lwip/ip.h"
 #include "lwip/tcp.h"
-#include "lwip/inet.h"
-#include "lwip/netif.h"
 #include "AsyncTcpClient.hpp"
 #include <AsyncTcpClientContext.hpp>
-
-//#include <StreamDev.h>
+#include <utility> // @todo: clarify if needed
 
 template<>
 AsyncTcp::AsyncTcpClient* SList<AsyncTcp::AsyncTcpClient>::_s_first = nullptr;
@@ -418,17 +412,16 @@ namespace AsyncTcp {
 //    _error is a protected member of AsyncTcpContext
     }
 
-    void AsyncTcpClient::setOnReceiveCallback(const std::function<void(std::unique_ptr<int>)> &cb) {
-        _receiveCallback = cb;
+    void AsyncTcpClient::setOnReceiveCallback(std::shared_ptr<EventHandler> handler) {
+        handler->init(*this);
+        _event_handler = std::move(handler);
     }
 
     void AsyncTcpClient::_onConnectCallback() {
-//    ethernet_arch_lwip_begin();
         AIPAddress remote_ip = remoteIP();
         Serial.print("Connection to ");
         Serial.print(remote_ip);
         Serial.println(" established successfully!");
-//    ethernet_arch_lwip_end();
     }
 
     void AsyncTcpClient::_onErrorCallback(err_t err) {
@@ -439,8 +432,8 @@ namespace AsyncTcp {
     }
 
     void AsyncTcpClient::_onReceiveCallback(std::unique_ptr<int> size) {
-        if (_receiveCallback) {
-            _receiveCallback(std::move(size));
+        if (_event_handler) {
+            _event_handler->handleEvent();
         }
     }
 

@@ -34,6 +34,7 @@
 #include "Print.h"
 #include "Client.h"
 #include "IPAddress.h"
+#include "EventHandler.hpp"
 
 namespace AsyncTcp {
 
@@ -66,7 +67,7 @@ namespace AsyncTcp {
      * This class implements a TCP client that supports asynchronous operations.
      * It derives from the Arduino Client and SList for managing client lists.
      */
-    class AsyncTcpClient : public arduino::Client, public SList<AsyncTcpClient> {
+    class   AsyncTcpClient : public arduino::Client, public SList<AsyncTcpClient> {
 
     protected:
         /**
@@ -320,9 +321,11 @@ namespace AsyncTcp {
 
         void setSync(bool sync);
 
-        void setOnReceiveCallback(const std::function<void(std::unique_ptr<int>)> &cb);
+        void setOnReceiveCallback(std::shared_ptr<EventHandler> handler);
 
     protected:
+
+        std::shared_ptr<EventHandler> _event_handler;  // Event handler (with polymorphism)
 
         [[maybe_unused]] static int8_t _s_connected(void *arg, void *tpcb, int8_t err);
 
@@ -333,8 +336,11 @@ namespace AsyncTcp {
         [[maybe_unused]] void _err(int8_t err);
 
         inline static bool defaultSync = true;
+
         AsyncTcpClientContext *_ctx;
+
         AsyncTcpClient *_owned;
+
         static uint16_t _localPort;
 
         std::function<void(std::unique_ptr<int>)> _receiveCallback;

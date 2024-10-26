@@ -24,8 +24,6 @@
 #include <cassert>
 #include <utility>
 #include "lwip/timeouts.h"
-//#include <esp_priv.h>
-//#include <coredecls.h>
 #include "Arduino.h"
 
 namespace AsyncTcp {

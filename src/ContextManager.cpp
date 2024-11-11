@@ -23,14 +23,20 @@ namespace AsyncTcp {
      * and assigns `ctx` to the core of `background_ctx` if initialization succeeds.
      */
     bool ContextManager::initDefaultContext() {
+
+        if (false == initiated) {
         async_context_threadsafe_background_config_t config = async_context_threadsafe_background_default_config();
 
         if (async_context_threadsafe_background_init(&background_ctx, &config)) {
             ctx = &background_ctx.core;
+                initiated = true;
             return true;
         }
 
         return false;
+    }
+
+        return true;
     }
 
     /**
@@ -48,7 +54,7 @@ namespace AsyncTcp {
         }
 
         if (!async_context_add_when_pending_worker(ctx, worker.getWorker())) {
-            Serial.println("Failed to add read qotd worker!");
+            DEBUGV("Failed to add read qotd worker!\n");
             return false;
         }
 
@@ -103,7 +109,7 @@ namespace AsyncTcp {
         if (ctx) {
             async_context_set_work_pending(ctx, worker.getWorker());
         } else {
-            Serial.println("CTX not available");
+        DEBUGV("CTX not available\n");
         }
     }
 

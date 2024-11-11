@@ -85,11 +85,12 @@ namespace AsyncTcp {
          *
          * @return The core number on which the context is running, or `-1` if the context is uninitialized.
          */
-        uint getCore() const;
+        [[nodiscard]] uint getCore() const;
 
     private:
         async_context_threadsafe_background_t background_ctx = {}; /**< Thread-safe background context for asynchronous operations. */
         async_context_t *ctx = nullptr; /**< Pointer to the default asynchronous context. */
+        bool initiated = false;
     };
 
 } // namespace AsyncTcp

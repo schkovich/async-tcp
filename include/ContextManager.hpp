@@ -19,7 +19,7 @@ namespace AsyncTcp {
     class ContextManager {
     public:
         /**
-         * @brief Constructs a `ContextManager` instance and initializes the default context.
+         * @brief Constructs a `ContextManager` instance.
          */
         ContextManager();
 
@@ -32,7 +32,7 @@ namespace AsyncTcp {
          * This function associates a `Worker` with the default context, enabling it to participate
          * in asynchronous operations managed by the `ContextManager`.
          */
-        bool addWorker(Worker &worker);
+        bool addWorker(Worker &worker) const;
 
         /**
          * @brief Retrieves a pointer to the default asynchronous context.
@@ -50,7 +50,7 @@ namespace AsyncTcp {
          * This function locks the context, ensuring exclusive access for critical sections
          * or operations that should not be interrupted by other threads.
          */
-        void acquireLock();
+        void acquireLock() const;
 
         /**
          * @brief Releases the lock on the context.
@@ -58,7 +58,7 @@ namespace AsyncTcp {
          * This function unlocks the context, allowing other threads to access it.
          * It should be called after `acquireLock` to ensure proper access control.
          */
-        void releaseLock();
+        void releaseLock() const;
 
         /**
          * @brief Marks a worker's work as pending within the context.
@@ -68,9 +68,8 @@ namespace AsyncTcp {
          * Signals that the specified worker has pending work to be processed within the context,
          * allowing the context manager to schedule it for execution.
          */
-        void setWorkPending(Worker &worker);
+        void setWorkPending(Worker &worker) const;
 
-    private:
         /**
          * @brief Initializes the default asynchronous context.
          *
@@ -81,6 +80,14 @@ namespace AsyncTcp {
          */
         bool initDefaultContext();
 
+        /**
+         * @brief Retrieves the core number associated with this `ContextManager`'s asynchronous context.
+         *
+         * @return The core number on which the context is running, or `-1` if the context is uninitialized.
+         */
+        uint getCore() const;
+
+    private:
         async_context_threadsafe_background_t background_ctx = {}; /**< Thread-safe background context for asynchronous operations. */
         async_context_t *ctx = nullptr; /**< Pointer to the default asynchronous context. */
     };

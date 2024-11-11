@@ -11,11 +11,8 @@ namespace AsyncTcp {
      * The constructor attempts to initialize the default asynchronous context by calling
      * `initDefaultContext`. If initialization fails, `ctx` remains `nullptr`.
      */
-    ContextManager::ContextManager() : ctx(nullptr) {
-        if (!initDefaultContext()) {
-            // Error handling can be performed here if context initialization fails
-        }
-    }
+    ContextManager::ContextManager()
+    = default;
 
     /**
      * @brief Initializes the default asynchronous context.
@@ -31,9 +28,9 @@ namespace AsyncTcp {
         if (async_context_threadsafe_background_init(&background_ctx, &config)) {
             ctx = &background_ctx.core;
             return true;
-        } else {
-            return false;
         }
+
+        return false;
     }
 
     /**
@@ -45,7 +42,7 @@ namespace AsyncTcp {
      * This method attempts to add the specified worker to the `ctx`. If `ctx` is `nullptr`
      * or the addition fails, it returns `false` and logs a message to Serial.
      */
-    bool ContextManager::addWorker(Worker &worker) {
+    bool ContextManager::addWorker(Worker &worker) const {
         if (!ctx) {
             return false;
         }
@@ -76,7 +73,7 @@ namespace AsyncTcp {
      * Ensures exclusive access to the context by blocking other threads until
      * `releaseLock` is called.
      */
-    void ContextManager::acquireLock() {
+    void ContextManager::acquireLock() const {
         if (ctx) {
             async_context_acquire_lock_blocking(ctx);
         }
@@ -88,7 +85,7 @@ namespace AsyncTcp {
      * This method should be called after `acquireLock` to allow other threads
      * access to the context.
      */
-    void ContextManager::releaseLock() {
+    void ContextManager::releaseLock() const {
         if (ctx) {
             async_context_release_lock(ctx);
         }
@@ -102,12 +99,18 @@ namespace AsyncTcp {
      * Calls `async_context_set_work_pending` on the specified worker within the context
      * to schedule it for execution. If `ctx` is `nullptr`, a message is logged to Serial.
      */
-    void ContextManager::setWorkPending(Worker &worker) {
+    void ContextManager::setWorkPending(Worker &worker) const {
         if (ctx) {
             async_context_set_work_pending(ctx, worker.getWorker());
         } else {
-            ::Serial.println("CTX not available");
+            Serial.println("CTX not available");
         }
     }
+
+    uint ContextManager::getCore() const
+    {
+        return ctx->core_num;
+    }
+
 
 } // namespace AsyncTcp

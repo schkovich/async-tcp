@@ -259,9 +259,9 @@ namespace AsyncTcp {
 
         explicit operator bool() override;
 
-        [[maybe_unused]] AIPAddress remoteIP();
+        [[maybe_unused]] AIPAddress remoteIP() const;
 
-        [[maybe_unused]] uint16_t remotePort();
+        [[maybe_unused]] uint16_t remotePort() const;
 
         AIPAddress localIP();
 
@@ -345,12 +345,12 @@ namespace AsyncTcp {
 
         std::function<void(std::unique_ptr<int>)> _receiveCallback;
 
-        void _onConnectCallback();
+        void _onConnectCallback() const;
 
         void _onErrorCallback(err_t err);
 
-        void _onReceiveCallback(std::unique_ptr<int> size);
+        void _onReceiveCallback(std::unique_ptr<int> size) const;
 
-        void _onAckCallback(struct tcp_pcb *tpcb, uint16_t len);
+        void _onAckCallback(struct tcp_pcb *tpcb, uint16_t len) const;
     };
 } // namespace AsyncTcp

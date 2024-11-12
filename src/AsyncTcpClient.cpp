@@ -318,7 +318,7 @@ namespace AsyncTcp {
         return available() || connected();
     }
 
-    [[maybe_unused]] AIPAddress AsyncTcpClient::remoteIP() {
+    [[maybe_unused]] AIPAddress AsyncTcpClient::remoteIP() const {
         if (!_ctx || !_ctx->getRemoteAddress()) {
             return {0};
         }
@@ -326,7 +326,7 @@ namespace AsyncTcp {
         return _ctx->getRemoteAddress();
     }
 
-    [[maybe_unused]] uint16_t AsyncTcpClient::remotePort() {
+    [[maybe_unused]] uint16_t AsyncTcpClient::remotePort() const {
         if (!_ctx) {
             return 0;
         }
@@ -417,11 +417,9 @@ namespace AsyncTcp {
         _event_handler = std::move(handler);
     }
 
-    void AsyncTcpClient::_onConnectCallback() {
-        AIPAddress remote_ip = remoteIP();
-        Serial.print("Connection to ");
-        Serial.print(remote_ip);
-        Serial.println(" established successfully!");
+    void AsyncTcpClient::_onConnectCallback() const {
+        const AIPAddress remote_ip = remoteIP();
+        DEBUGV("Connection to %S established successfully!", remote_ip.toString());
     }
 
     void AsyncTcpClient::_onErrorCallback(err_t err) {
@@ -431,12 +429,13 @@ namespace AsyncTcp {
         _ctx = nullptr;
     }
 
-    void AsyncTcpClient::_onReceiveCallback(std::unique_ptr<int> size) {
+    void AsyncTcpClient::_onReceiveCallback(std::unique_ptr<int> size) const {
         if (_event_handler) {
             _event_handler->handleEvent();
         }
     }
 
-    void AsyncTcpClient::_onAckCallback(struct tcp_pcb *tpcb, uint16_t len) {
+    void AsyncTcpClient::_onAckCallback(struct tcp_pcb *tpcb, uint16_t len) const {
+        // @todo: implement later
     }
 } // namespace AsyncTcp

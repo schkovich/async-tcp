@@ -240,11 +240,11 @@ namespace AsyncTcp {
     }
 
     int AsyncTcpClient::read(uint8_t *buf, size_t size) {
-        return (int) _ctx->read((char *) buf, size);
+        return static_cast<int>(_ctx->read(reinterpret_cast<char *>(buf), size));
     }
 
     int AsyncTcpClient::read(char *buf, size_t size) {
-        return (int) _ctx->read(buf, size);
+        return static_cast<int>(_ctx->read(buf, size));
     }
 
     int AsyncTcpClient::peek() {

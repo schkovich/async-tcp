@@ -18,10 +18,10 @@ namespace AsyncTcp {
      * - Notifies `_ctx` of pending work for `_worker`.
      */
     void ReceiveCallbackHandler::handleEvent() {
-        std::unique_ptr<WorkerData> data = std::make_unique<WorkerData>();  // Allocate WorkerData
+        auto data = std::make_unique<WorkerData>();  // Allocate WorkerData
 
         // Capture the available size of data from the client
-        std::unique_ptr<int> size = std::make_unique<int>(_client->available());
+        auto size = std::make_unique<int>(_client->available());
 
         data->read_size = std::move(size);       // Set read size in WorkerData
         data->client = _client;                  // Set the client reference in WorkerData

@@ -496,6 +496,19 @@ class AsyncTcpClientContext {
     }
 
   protected:
+    /**
+     * @brief Checks if the operation has timed out based on a given start time
+     *
+     * This function replaces the blocking esp_delay mechanism with a non-blocking
+     * timeout check. It compares the elapsed time since start_time against
+     * the configured timeout value (_timeout_ms).
+     *
+     * @param start_time The timestamp (in milliseconds) when the operation started
+     * @return true if the operation has timed out (elapsed time > timeout)
+     * @return false if the operation is still within the timeout window
+     *
+     * @note Uses millis() for time measurement which wraps around every ~49 days
+     */
     [[nodiscard]] bool _is_timeout(uint32_t start_time) const {
         return millis() - start_time > _timeout_ms;
     }
@@ -527,6 +540,8 @@ class AsyncTcpClientContext {
             if (written == dl || _is_timeout(op_start_time) || !_is_connection_valid()) {
                 if (_is_timeout(op_start_time)) {
                     DEBUGV(":wtmo\r\n");
+                } else if (!_is_connection_valid()) {
+                    DEBUGV("Operation aborted ;)\r\n");
                 }
                 break;
             }

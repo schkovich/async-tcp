@@ -752,7 +752,7 @@ class AsyncTcpClientContext {
 
     void _error(err_t err) {
         (void)err;
-        DEBUGV(":er %d 0x%08lx\r\n", (int)err, (uint32_t)_datasource);
+        DEBUGV(":er %d 0x%08lx\r\n", (int)err);
         Serial.print("Error: ");
         Serial.println(err);
         tcp_arg(_pcb, nullptr);

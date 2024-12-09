@@ -419,7 +419,7 @@ namespace AsyncTcp {
 
     void AsyncTcpClient::_onConnectCallback() const {
         const AIPAddress remote_ip = remoteIP();
-        DEBUGV("Connection to %S established successfully!", remote_ip.toString());
+        DEBUGV("Connection to %S established successfully!", remote_ip.toString().c_str());
     }
 
     void AsyncTcpClient::_onErrorCallback(err_t err) {

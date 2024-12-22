@@ -146,11 +146,11 @@ class AsyncTcpClientContext {
         return _pcb ? tcp_sndbuf(_pcb) : 0;
     }
 
-    void setNoDelay(bool nodelay) {
+    void setNoDelay(const bool no_delay) const {
         if (!_pcb) {
             return;
         }
-        if (nodelay) {
+        if (no_delay) {
             tcp_nagle_disable(_pcb);
         } else {
             tcp_nagle_enable(_pcb);
@@ -206,8 +206,8 @@ class AsyncTcpClientContext {
         if (!_rx_buf) {
             return 0;
         }
+        return _rx_buf->len - _rx_buf_offset;
 
-        return _rx_buf->tot_len - _rx_buf_offset;
     }
 
     /**
@@ -289,43 +289,69 @@ class AsyncTcpClientContext {
 
         return size_read;
     }
+    /**
+     * @brief A group of functions for non-consuming inspection and controlled consumption of received data
+     *
+     * These functions provide a mechanism to inspect and process received data without immediately consuming it.
+     * Data can only be consumed after successful processing using peekConsume().
+     */
 
+    /**
+     * @brief Peek at the next byte in the receive buffer
+     * @return The next byte, or 0 if buffer is empty
+     * @note Does not consume the byte
+     */
     [[nodiscard]] char peek() const {
         if (!_rx_buf) {
             return 0;
         }
 
-        return reinterpret_cast<char *>(_rx_buf->payload)[_rx_buf_offset];
+        return static_cast<char *>(_rx_buf->payload)[_rx_buf_offset];
     }
 
+    /**
+     * @brief Copy available bytes into a destination buffer without consuming
+     * @param dst Destination buffer
+     * @param size Maximum number of bytes to copy
+     * @return Number of bytes actually copied
+     * @note Does not consume the bytes
+     */
     size_t peekBytes(char *dst, size_t size) const {
         if (!_rx_buf) {
             return 0;
         }
 
-        size_t max_size = getSize();
+        const size_t max_size = getSize();
         size = (size < max_size) ? size : max_size;
 
         DEBUGV(":pd %d, %d, %d\r\n", size, _rx_buf->tot_len, _rx_buf_offset);
-        size_t buf_size = _rx_buf->len - _rx_buf_offset;
-        size_t copy_size = (size < buf_size) ? size : buf_size;
+        const size_t buf_size = peekAvailable();
+        const size_t copy_size = (size < buf_size) ? size : buf_size;
         DEBUGV(":rpi %d, %d\r\n", buf_size, copy_size);
-        memcpy(dst, reinterpret_cast<char *>(_rx_buf->payload) + _rx_buf_offset,
-               copy_size);
+        memcpy(dst, static_cast<char *>(_rx_buf->payload) + _rx_buf_offset, copy_size);
         return copy_size;
     }
 
     // return a pointer to available data buffer (size = peekAvailable())
     // semantic forbids any kind of read() before calling peekConsume()
-    const char *peekBuffer() {
+    /**
+     * @brief Get direct pointer to available data in receive buffer
+     * @return Pointer to data buffer, or nullptr if empty
+     * @note Any read() operation is forbidden before calling peekConsume()
+     */
+    [[nodiscard]] const char *peekBuffer() const {
         if (!_rx_buf) {
             return nullptr;
         }
-        return (const char *)_rx_buf->payload + _rx_buf_offset;
+        return static_cast<const char*>(_rx_buf->payload) + _rx_buf_offset;
     }
 
     // return number of byte accessible by peekBuffer()
-    size_t peekAvailable() {
+    /**
+     * @brief Get number of bytes available in current receive buffer
+     * @return Number of available bytes
+     */
+    [[nodiscard]] size_t peekAvailable() const {
         if (!_rx_buf) {
             return 0;
         }
@@ -333,7 +359,12 @@ class AsyncTcpClientContext {
     }
 
     // consume bytes after use (see peekBuffer)
-    void peekConsume(size_t consume) { _consume(consume); }
+    /**
+     * @brief Consume specified number of bytes after processing
+     * @param consume Number of bytes to consume
+     * @note Must be called after successful processing of peeked data
+     */
+    void peekConsume(const size_t consume) { _consume(consume); }
 
     void discard_received() {
         DEBUGV(":dsrcv %d\n", _rx_buf ? _rx_buf->tot_len : 0);
@@ -767,6 +798,8 @@ class AsyncTcpClientContext {
     err_t _connected(struct tcp_pcb *pcb, err_t err) {
         (void)err;
         (void)pcb;
+        DEBUGV("AsyncTcpClientContext::_connected - incoming pcb: %p, stored _pcb: %p\n", pcb, _pcb);
+        sleep_ms(1000);
         assert(pcb == _pcb);
         _connectCb();
         return ERR_OK;

@@ -238,9 +238,15 @@ namespace AsyncTcp {
 
         virtual size_t peekBytes(uint8_t *buffer, size_t length);
 
-        [[maybe_unused]] size_t peekBytes(char *buffer, size_t length) {
-            return peekBytes((uint8_t *) buffer, length);
+        [[maybe_unused]] size_t peekBytes(char *buffer, const size_t length) {
+          return peekBytes(reinterpret_cast<uint8_t *>(buffer), length);
         }
+
+        [[nodiscard]] const char* peekBuffer() const;
+
+        [[nodiscard]] size_t peekAvailable() const;
+
+        void peekConsume(size_t size) const;
 
         void flush() override {
             (void) flush(
@@ -307,7 +313,7 @@ namespace AsyncTcp {
 
         [[maybe_unused]] [[nodiscard]] bool getNoDelay() const;
 
-        void setNoDelay(bool no_delay);
+        void setNoDelay(bool no_delay) const;
 
         // default Sync=false
         // When sync is true, all writes are automatically flushed.
@@ -319,13 +325,15 @@ namespace AsyncTcp {
 
         [[maybe_unused]] [[nodiscard]] bool getSync() const;
 
-        void setSync(bool sync);
+        void setSync(bool sync) const;
 
         void setOnReceiveCallback(std::shared_ptr<EventHandler> handler);
+        void setOnConnectedCallback(std::shared_ptr<EventHandler> handler);
 
     protected:
 
-        std::shared_ptr<EventHandler> _event_handler;  // Event handler (with polymorphism)
+        std::shared_ptr<EventHandler> _receive_callback_handler;
+        std::shared_ptr<EventHandler> _connected_callback_handler;
 
         [[maybe_unused]] static int8_t _s_connected(void *arg, void *tpcb, int8_t err);
 

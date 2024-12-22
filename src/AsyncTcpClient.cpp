@@ -19,10 +19,11 @@
     License along with this library; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
+#include "AsyncTcpClient.hpp"
 #include "LwipEthernet.h"
 #include "lwip/tcp.h"
-#include "AsyncTcpClient.hpp"
 #include <AsyncTcpClientContext.hpp>
+#include <bm_client.h>
 #include <utility> // @todo: clarify if needed
 
 template<>
@@ -35,14 +36,14 @@ namespace AsyncTcp {
 
     uint16_t AsyncTcpClient::_localPort = 0;
 
-    static bool defaultNoDelay = false; // false == Nagle enabled by default
+    static bool defaultNoDelay = true; // false == Nagle enabled by default
     static bool defaultSync = false;
 
-    [[maybe_unused]] void AsyncTcpClient::setDefaultNoDelay(bool noDelay) {
+    [[maybe_unused]] void AsyncTcpClient::setDefaultNoDelay(const bool noDelay) {
         defaultNoDelay = noDelay;
     }
 
-    [[maybe_unused]] void AsyncTcpClient::setDefaultSync(bool sync) {
+    [[maybe_unused]] void AsyncTcpClient::setDefaultSync(const bool sync) {
         defaultSync = sync;
     }
 
@@ -169,7 +170,7 @@ namespace AsyncTcp {
         return 1;
     }
 
-    void AsyncTcpClient::setNoDelay(bool no_delay) {
+    void AsyncTcpClient::setNoDelay(const bool no_delay) const {
         if (!_ctx) {
             return;
         }
@@ -183,7 +184,7 @@ namespace AsyncTcp {
         return _ctx->getNoDelay();
     }
 
-    void AsyncTcpClient::setSync(bool sync) {
+    void AsyncTcpClient::setSync(const bool sync) const {
         if (!_ctx) {
             return;
         }
@@ -248,32 +249,38 @@ namespace AsyncTcp {
     }
 
     int AsyncTcpClient::peek() {
-        if (!available()) {
+        if (!_ctx) {
             return -1;
         }
-
         return _ctx->peek();
     }
 
-    size_t AsyncTcpClient::peekBytes(uint8_t *buffer, size_t length) {
-        size_t count;
-
+    size_t AsyncTcpClient::peekBytes(uint8_t *buffer, const size_t length) {
         if (!_ctx) {
             return 0;
         }
+        return _ctx->peekBytes(reinterpret_cast<char *>(buffer), length);
+    }
 
-        _startMillis = millis();
-        while ((available() < (int) length) && ((millis() - _startMillis) < _timeout)) {
-            yield();
+    const char* AsyncTcpClient::peekBuffer() const {
+        if (!_ctx) {
+            return nullptr;
         }
+        return _ctx->peekBuffer();
+    }
 
-        if (available() < (int) length) {
-            count = available();
-        } else {
-            count = length;
+    size_t AsyncTcpClient::peekAvailable() const {
+        if (!_ctx) {
+            return 0;
         }
+        return _ctx->peekAvailable();
+    }
 
-        return _ctx->peekBytes((char *) buffer, count);
+    void AsyncTcpClient::peekConsume(size_t size) const {
+        if (!_ctx) {
+            return;
+        }
+        _ctx->peekConsume(size);
     }
 
     bool AsyncTcpClient::flush(unsigned int maxWaitMs) {
@@ -301,7 +308,7 @@ namespace AsyncTcp {
 
     uint8_t AsyncTcpClient::connected() {
         if (!_ctx || _ctx->state() == CLOSED) {
-            return 0;
+            return CLOSED;
         }
 
         return _ctx->state() == ESTABLISHED || available();
@@ -413,29 +420,42 @@ namespace AsyncTcp {
     }
 
     void AsyncTcpClient::setOnReceiveCallback(std::shared_ptr<EventHandler> handler) {
-        handler->init(*this);
-        _event_handler = std::move(handler);
+        _receive_callback_handler = std::move(handler);
+    }
+
+    void AsyncTcpClient::setOnConnectedCallback(std::shared_ptr<EventHandler> handler) {
+        _connected_callback_handler = std::move(handler);
     }
 
     void AsyncTcpClient::_onConnectCallback() const {
         const AIPAddress remote_ip = remoteIP();
-        DEBUGV("Connection to %S established successfully!", remote_ip.toString().c_str());
+        (void) remote_ip;
+        DEBUGV("AsyncTcpClient::_onConnectCallback(): Connected to %S.\n", remote_ip.toString().c_str());
+        if (_connected_callback_handler) {
+            _connected_callback_handler->handleEvent();
+        } else {
+            DEBUGV("AsyncTcpClient::_onConnectCallback: No event handler\n");
+        }
     }
 
     void AsyncTcpClient::_onErrorCallback(err_t err) {
-        Serial.print("The ctx failed with the error code: ");
-        Serial.println(err);
+        DEBUGV("The ctx failed with the error code: %d", err);
         _ctx->close();
         _ctx = nullptr;
     }
 
     void AsyncTcpClient::_onReceiveCallback(std::unique_ptr<int> size) const {
-        if (_event_handler) {
-            _event_handler->handleEvent();
+        if (_receive_callback_handler) {
+            _receive_callback_handler->handleEvent();
+        } else {
+            DEBUGV("AsyncTcpClient::_onReceiveCallback: No event handler\n");
         }
     }
 
     void AsyncTcpClient::_onAckCallback(struct tcp_pcb *tpcb, uint16_t len) const {
+        (void) tpcb;
+        (void) len;
+        DEBUGV("AsyncTcpClient::_onAckCallback: ack callback triggered.length: %d\n", len);
         // @todo: implement later
     }
 } // namespace AsyncTcp

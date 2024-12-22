@@ -11,7 +11,7 @@ namespace AsyncTcp {
      * until it is defined by `setWorkFunction`. This ensures that the worker’s work function
      * is not invoked until explicitly set.
      */
-    Worker::Worker() : worker{}, workData(std::make_unique<WorkerData>()) {
+    Worker::Worker() : worker{}, workData(nullptr) {
         worker.do_work = nullptr; // Initialize to nullptr until set by setWorkFunction
     }
 

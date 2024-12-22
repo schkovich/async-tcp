@@ -1,35 +1,37 @@
 #pragma once
 
-#include <memory>
 #include "ContextManager.hpp"
 #include "Worker.hpp"
 #include "WorkerData.hpp"
+#include <memory>
 
 namespace AsyncTcp {
 
-class AsyncTcpClient; // Forward declaration
+/**
+ * @class EventHandler
+ * @brief Abstract base class for handling asynchronous TCP events.
+ *
+ * This class provides an interface for handling events within an asynchronous
+ * TCP client context. Derived classes must implement the pure virtual
+ * `handleEvent()` function to specify the behavior for event handling. The
+ * `EventHandler` instances are created using the static `create` factory
+ * method.
+ */
+class  EventHandler {
 
+  public:
     /**
-     * @class EventHandler
-     * @brief Abstract base class for handling asynchronous TCP events.
-     *
-     * This class provides an interface for handling events within an asynchronous TCP client context.
-     * Derived classes must implement the pure virtual `handleEvent()` function to specify the behavior
-     * for event handling. The `EventHandler` instances are created using the static `create` factory method.
+     * @brief Virtual destructor for safe cleanup in derived classes.
      */
-    class EventHandler {
-
-    public:
-        /**
-         * @brief Virtual destructor for safe cleanup in derived classes.
-         */
-        virtual ~EventHandler() = default;
+    virtual ~EventHandler() = default;
 
     /**
      * @brief Pure virtual function to handle events.
      *
      * This function is meant to be overridden by derived classes to define
-     * custom event handling logic within the asynchronous TCP client.
+     * custom event handling logic. The handling is based on Pico SDK's
+     * async_context system and can be used for various asynchronous
+     * operations.
      */
     virtual void handleEvent() = 0;
 
@@ -61,18 +63,6 @@ class AsyncTcpClient; // Forward declaration
                                    std::forward<Args>(args)...);
     }
 
-    /**
-     * @brief Initialize the event handler with a specified client.
-     *
-     * @param client Reference to an `AsyncTcpClient` instance.
-     *
-     * This function sets the internal client pointer, allowing the event
-     * handler to interact with the provided client during event handling.
-     */
-    void init(AsyncTcpClient &client) {
-        _client = &client; // Set client pointer
-    }
-
   protected:
     /**
      * @brief Protected constructor to restrict instantiation to the factory
@@ -89,8 +79,10 @@ class AsyncTcpClient; // Forward declaration
                           std::shared_ptr<Worker> worker)
         : _ctx(std::move(ctx)), _worker(std::move(worker)) {}
 
-        std::shared_ptr<ContextManager> _ctx;    /**< Shared pointer to a `ContextManager` for managing the context. */
-        std::shared_ptr<Worker> _worker;         /**< Shared pointer to a `Worker` for managing worker-specific tasks. */
-        AsyncTcpClient* _client = nullptr;       /**< Raw pointer to the `AsyncTcpClient` for client interactions. */
-    };
-}
+    std::shared_ptr<ContextManager>
+        _ctx; /**< Shared pointer to a `ContextManager` for managing the
+                 context. */
+    std::shared_ptr<Worker> _worker; /**< Shared pointer to a `Worker` for
+                                        managing worker-specific tasks. */
+};
+} // namespace AsyncTcp

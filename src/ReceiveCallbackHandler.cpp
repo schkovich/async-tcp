@@ -13,18 +13,17 @@ namespace AsyncTcp {
      * Finally, it signals the context that there is pending work to be processed.
      *
      * - Allocates a `WorkerData` instance for the incoming data.
-     * - Sets the `read_size` member of `WorkerData` based on available data in `_client`.
+     * - Sets the `read_size` member of `WorkerData` based on available data in `client`.
      * - Associates the `WorkerData` instance with `_worker`.
      * - Notifies `_ctx` of pending work for `_worker`.
      */
     void ReceiveCallbackHandler::handleEvent() {
-        auto data = std::make_unique<WorkerData>();  // Allocate WorkerData
+        auto data = std::make_unique<WorkerData>(client);  // Allocate WorkerData
 
         // Capture the available size of data from the client
-        auto size = std::make_unique<int>(_client->available());
+        auto size = std::make_unique<int>(client.available());
 
         data->read_size = std::move(size);       // Set read size in WorkerData
-        data->client = _client;                  // Set the client reference in WorkerData
 
         // Pass WorkerData to the worker and notify context of pending work
         _worker->setWorkerData(std::move(data));

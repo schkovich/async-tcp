@@ -20,6 +20,7 @@
 #include <algorithm>
 #include "WorkerData.hpp" // To include the WorkerData definition
 #include "ReceiveCallbackHandler.hpp"
+#include "OnConnectedCallbackHandler.h"
 // WiFi credentials
 const auto *ssid = STASSID;
 const auto *password = STAPSK;
@@ -105,12 +106,16 @@ extern "C" {
     void print_out(async_context_t *context, async_when_pending_worker_t *worker);
 }
 
+extern "C" {
+    size_t simulateProcessData(const char* data, size_t len);
+}
+
 void get_quote_of_the_day() {
     IPAddress remote_address;
     hostByName(host, remote_address, 1000);
 
     if (0 == qotd_client.connect(remote_address, port)) {
-        DEBUGV("Failed to connect to QOTD server..\n");
+        DEBUGV("Failed to connect to QOTD server.\n");
     }
 }
 
@@ -133,28 +138,52 @@ void get_echo() {
     }
 }
 
+// Simulates MQTT library's process_data behavior
+size_t simulateProcessData(const char* data, const size_t len) {
+    (void) data;
+    static int call_count = 0;
+    call_count++;
+
+    // Simulate different consumption patterns:
+    // - First call: consume half
+    // - Second call: consume everything
+    // - Third call: consume nothing
+    // - Then repeat
+
+    switch (call_count % 3) {
+    case 0: return 0;                    // Consume nothing
+    case 1: return len / 2;              // Consume half
+    case 2: return len;                  // Consume all
+    default: return 0;
+    }
+}
+
 void read_qotd(async_context_t *context, async_when_pending_worker_t *worker) {
     (void) context;
     auto *pData = static_cast<AsyncTcp::WorkerData *>(worker->user_data);
 
-    // AsyncTcpClient pData->client
-    if (pData && pData->client) {
+    if (pData) {
+        const char* data = pData->client.peekBuffer();
+        size_t available = pData->client.peekAvailable();
 
-        // Use the minimum of `read_size` and the QOTD protocol maximum size
-        size_t safe_size = std::min(*pData->read_size, MAX_QOTD_SIZE);
-        char buffer[safe_size];
+        size_t consumed = simulateProcessData(data, available);
+        if (consumed > 0) {
+            pData->client.peekConsume(consumed);
+            // Append to tx_buffer instead of overwriting
+             /*
+             Update the tx_buffer with the new quote
+             A lock should not be acquired here.
+             read_qotd is invoked as part of the async_when_pending_worker_t mechanism,
+             and the async_context already ensures that the worker is executed under a lock
+             */
+            tx_buffer->append(data, consumed);
+        }
 
-        const size_t count = pData->client->read(buffer, *pData->read_size);
-        Serial.println(buffer);
-        /*
-         Update the tx_buffer with the new quote
-         A lock should not be acquired here.
-         read_qotd is invoked as part of the async_when_pending_worker_t mechanism,
-         and the async_context already ensures that the worker is executed under a lock
-         */
-        tx_buffer->assign(buffer, count);  // Store the quote in tx_buffer
+        DEBUGV("Available: %d, Consumed: %d, Buffer: %d\n",
+                     available, consumed, tx_buffer->length());
+
     } else {
-        DEBUGV("Invalid read size pointer\n");
+        DEBUGV("Invalid pointer\n");
     }
 
     worker->user_data = nullptr;
@@ -179,11 +208,11 @@ void read_echo(async_context_t *context, async_when_pending_worker_t *worker) {
     (void) context;
     auto *pData = static_cast<AsyncTcp::WorkerData *>(worker->user_data);
 
-    if (pData && pData->client) {
+    if (pData) {
         // Use the minimum of `read_size` and the QOTD protocol maximum size
         const size_t safe_size = std::min(*pData->read_size, MAX_QOTD_SIZE);
         char buffer[safe_size];
-        const size_t count = pData->client->read(buffer, safe_size);
+        const size_t count = pData->client.read(buffer, safe_size);
         (void) count;
         std::string reversed_quote = buffer;
         std::reverse(reversed_quote.begin(), reversed_quote.end());
@@ -209,7 +238,7 @@ void print_heap_stats() {
             snprintf(print_me, sizeof(print_me), "Free: %d, Used: %d, Total: %d", freeHeap, usedHeap, totalHeap)
     );
 
-    auto data = std::make_unique<AsyncTcp::WorkerData>();  // Allocate WorkerData
+    auto data = std::make_unique<AsyncTcp::WorkerData>(echo_client);  // Allocate WorkerData
 
     // Capture message
     auto message = std::make_unique<std::string>(print_me);
@@ -235,7 +264,7 @@ void print_heap_stats() {
     while(!Serial)
     {
         delay(10);
-    };
+    }
     delay(5000);
     DEBUGV("C0: Blue leader standing by...\n");
     RP2040::enableDoubleResetBootloader();
@@ -251,10 +280,8 @@ void print_heap_stats() {
         rp2040.reboot();
     }
 
-    Serial.println("WiFi connected");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-    // DEBUGV("IP address:  %s\n", ip);
+    Serial.println("Wi-Fi connected");
+    DEBUGV("IP address:  %s\n", ip->toString().c_str());
 
     if (!ctx->initDefaultContext()) {
         // Error handling can be performed here if context initialization fails
@@ -271,7 +298,7 @@ void print_heap_stats() {
         DEBUGV("Failed to add echo worker\n");
     }
 
-    std::shared_ptr<AsyncTcp::ReceiveCallbackHandler> echo_handler = AsyncTcp::EventHandler::create<AsyncTcp::ReceiveCallbackHandler>(ctx, echo_worker);
+    std::shared_ptr<AsyncTcp::ReceiveCallbackHandler> echo_handler = AsyncTcp::EventHandler::create<AsyncTcp::ReceiveCallbackHandler>(ctx, echo_worker, echo_client);
 
     echo_client.setOnReceiveCallback(std::move(echo_handler));
 
@@ -283,9 +310,25 @@ void print_heap_stats() {
         DEBUGV("Failed to add qotd worker\n");
     }
 
-    std::shared_ptr<AsyncTcp::ReceiveCallbackHandler> qotd_handler = AsyncTcp::EventHandler::create<AsyncTcp::ReceiveCallbackHandler>(ctx, qotd_worker);
+    std::shared_ptr<AsyncTcp::ReceiveCallbackHandler> qotd_handler = AsyncTcp::EventHandler::create<AsyncTcp::ReceiveCallbackHandler>(ctx, qotd_worker, qotd_client);
 
     qotd_client.setOnReceiveCallback(std::move(qotd_handler));
+
+    const auto connect_worker = std::make_shared<AsyncTcp::Worker>();
+    connect_worker->setWorkFunction(print_out); // Reuse the print_out function
+
+    if(!ctx->addWorker(*connect_worker)) {
+        DEBUGV("Failed to add connect worker\n");
+    }
+
+    std::shared_ptr<AsyncTcp::OnConnectedCallbackHandler> connect_handler =
+        AsyncTcp::EventHandler::create<AsyncTcp::OnConnectedCallbackHandler>(
+            ctx,
+            connect_worker,
+            qotd_client);
+
+    qotd_client.setOnConnectedCallback(std::move(connect_handler));
+
 }
 
 // Running on core1

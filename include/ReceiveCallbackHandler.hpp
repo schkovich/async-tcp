@@ -1,39 +1,47 @@
 // ReceiveCallbackHandler.hpp
 
 #pragma once
+#include "AsyncTcpClient.hpp"
 #include "EventHandler.hpp"
 
 namespace AsyncTcp {
 
+/**
+ * @class ReceiveCallbackHandler
+ * @brief Concrete implementation of `EventHandler` for handling receive
+ * callback events.
+ *
+ * This class provides an implementation of the `handleEvent` method to manage
+ * events related to receiving data in an asynchronous TCP context.
+ */
+class ReceiveCallbackHandler final : public EventHandler {
+
+  public:
     /**
-     * @class ReceiveCallbackHandler
-     * @brief Concrete implementation of `EventHandler` for handling receive callback events.
+     * @brief Constructs a `ReceiveCallbackHandler` with a specified context,
+     * worker, and client.
      *
-     * This class provides an implementation of the `handleEvent` method to manage events
-     * related to receiving data in an asynchronous TCP context.
+     * @param ctx Shared pointer to a `ContextManager` instance.
+     * @param worker Shared pointer to a `Worker` instance.
+     * @param client Reference to the AsyncTcpClient instance that handles TCP
+     * operations.
      */
-    class ReceiveCallbackHandler : public EventHandler {
+    explicit ReceiveCallbackHandler(std::shared_ptr<ContextManager> ctx,
+                                    std::shared_ptr<Worker> worker,
+                                    AsyncTcpClient &client)
+        : EventHandler(std::move(ctx), std::move(worker)), client(client) {}
 
-    public:
-        /**
-         * @brief Constructs a `ReceiveCallbackHandler` with a specified context and worker.
-         *
-         * @param ctx Shared pointer to a `ContextManager` instance.
-         * @param worker Shared pointer to a `Worker` instance.
-         *
-         * Initializes the `ReceiveCallbackHandler` with the provided context and worker.
-         * This setup allows the handler to manage and process data reception events.
-         */
-        explicit ReceiveCallbackHandler(std::shared_ptr<ContextManager> ctx, std::shared_ptr<Worker> worker)
-                : EventHandler(std::move(ctx), std::move(worker)) {}
+    /**
+     * @brief Handles receive events for incoming TCP data.
+     *
+     * This implementation processes incoming data by creating appropriate
+     * worker data and scheduling it for asynchronous processing.
+     */
+    void handleEvent() override;
 
-        /**
-         * @brief Overrides `EventHandler::handleEvent` to define event handling for received data.
-         *
-         * This function is called when data is received, and it contains logic to process
-         * the incoming data within the asynchronous TCP client context.
-         */
-        void handleEvent() override;
-    };
+  private:
+    AsyncTcpClient
+        &client; /**< Reference to the TCP client handling the connection. */
+};
 
 } // namespace AsyncTcp

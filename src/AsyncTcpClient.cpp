@@ -118,7 +118,7 @@ namespace AsyncTcp {
     }
     int AsyncTcpClient::connect(const char *host, uint16_t port) {
         AIPAddress remote_addr;
-        if (::hostByName(host, remote_addr, _timeout)) { // from WiFiClient
+        if (hostByName(host, remote_addr, static_cast<int>(_ctx->getTimeout()))) { // from WiFiClient
             return connect(remote_addr, port);
         }
         return 0;

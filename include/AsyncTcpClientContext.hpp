@@ -164,7 +164,7 @@ class AsyncTcpClientContext {
         return tcp_nagle_disabled(_pcb);
     }
 
-    void setTimeout(int timeout_ms) { _timeout_ms = timeout_ms; }
+    void setTimeout(const uint32_t timeout_ms) { _timeout_ms = timeout_ms; }
 
     [[maybe_unused]] [[nodiscard]] uint32_t getTimeout() const {
         return _timeout_ms;

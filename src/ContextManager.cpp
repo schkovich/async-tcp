@@ -2,6 +2,7 @@
 
 #include "ContextManager.hpp"
 #include "Arduino.h"
+#include "SyncPayload.h"
 
 namespace AsyncTcp {
 
@@ -11,8 +12,7 @@ namespace AsyncTcp {
      * The constructor attempts to initialize the default asynchronous context by calling
      * `initDefaultContext`. If initialization fails, `ctx` remains `nullptr`.
      */
-    ContextManager::ContextManager()
-    = default;
+    ContextManager::ContextManager() = default;
 
     /**
      * @brief Initializes the default asynchronous context.
@@ -25,16 +25,16 @@ namespace AsyncTcp {
     bool ContextManager::initDefaultContext() {
 
         if (false == initiated) {
-        async_context_threadsafe_background_config_t config = async_context_threadsafe_background_default_config();
+            async_context_threadsafe_background_config_t config = async_context_threadsafe_background_default_config();
 
-        if (async_context_threadsafe_background_init(&background_ctx, &config)) {
-            ctx = &background_ctx.core;
+            if (async_context_threadsafe_background_init(&background_ctx, &config)) {
+                ctx = &background_ctx.core;
                 initiated = true;
-            return true;
-        }
+                return true;
+            }
 
-        return false;
-    }
+            return false;
+        }
 
         return true;
     }
@@ -48,7 +48,7 @@ namespace AsyncTcp {
      * This method attempts to add the specified worker to the `ctx`. If `ctx` is `nullptr`
      * or the addition fails, it returns `false` and logs a message to Serial.
      */
-    bool ContextManager::addWorker(Worker &worker) const {
+    bool ContextManager::addWorker(Worker& worker) const {
         if (!ctx) {
             return false;
         }
@@ -69,9 +69,7 @@ namespace AsyncTcp {
      * This method provides read-only access to the internal context for managing
      * asynchronous operations.
      */
-    async_context *ContextManager::getDefaultContext() const {
-        return ctx;
-    }
+    async_context* ContextManager::getDefaultContext() const { return ctx; }
 
     /**
      * @brief Acquires a blocking lock on the asynchronous context.
@@ -105,18 +103,21 @@ namespace AsyncTcp {
      * Calls `async_context_set_work_pending` on the specified worker within the context
      * to schedule it for execution. If `ctx` is `nullptr`, a message is logged to Serial.
      */
-    void ContextManager::setWorkPending(Worker &worker) const {
+    void ContextManager::setWorkPending(Worker& worker) const {
         if (ctx) {
             async_context_set_work_pending(ctx, worker.getWorker());
-        } else {
-        DEBUGV("CTX not available\n");
+        }
+        else {
+            DEBUGV("CTX not available\n");
         }
     }
 
-    uint ContextManager::getCore() const
-    {
-        return ctx->core_num;
+    unsigned ContextManager::execWorkSynchronously(SyncPayload* payload) const {
+        return async_context_execute_sync(ctx, payload->getHandler(), payload->getParams());
     }
+
+
+    uint ContextManager::getCore() const { return ctx->core_num; }
 
 
 } // namespace AsyncTcp

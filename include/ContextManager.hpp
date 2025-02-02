@@ -4,6 +4,7 @@
 
 #include <pico/async_context_threadsafe_background.h>
 #include "Worker.hpp"
+#include "SyncPayload.h"
 
 namespace AsyncTcp {
 
@@ -70,6 +71,7 @@ namespace AsyncTcp {
          */
         void setWorkPending(Worker &worker) const;
 
+
         /**
          * @brief Initializes the default asynchronous context.
          *
@@ -79,6 +81,8 @@ namespace AsyncTcp {
          * ensuring it is ready to manage workers and handle asynchronous tasks.
          */
         bool initDefaultContext();
+
+        [[nodiscard]] unsigned execWorkSynchronously(SyncPayload* payload) const;
 
         /**
          * @brief Retrieves the core number associated with this `ContextManager`'s asynchronous context.
@@ -92,5 +96,7 @@ namespace AsyncTcp {
         async_context_t *ctx = nullptr; /**< Pointer to the default asynchronous context. */
         bool initiated = false;
     };
+
+    using ContextManagerPtr = std::unique_ptr<ContextManager>;
 
 } // namespace AsyncTcp

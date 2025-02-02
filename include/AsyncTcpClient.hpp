@@ -329,11 +329,13 @@ namespace AsyncTcp {
 
         void setOnReceiveCallback(std::shared_ptr<EventHandler> handler);
         void setOnConnectedCallback(std::shared_ptr<EventHandler> handler);
+        void setOnErrorCallback(std::shared_ptr<EventHandler> handler);
 
     protected:
 
         std::shared_ptr<EventHandler> _receive_callback_handler;
         std::shared_ptr<EventHandler> _connected_callback_handler;
+        std::shared_ptr<EventHandler> _error_callback_handler;
 
         [[maybe_unused]] static int8_t _s_connected(void *arg, void *tpcb, int8_t err);
 

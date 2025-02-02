@@ -26,10 +26,10 @@ class ReceiveCallbackHandler final : public EventHandler {
      * @param client Reference to the AsyncTcpClient instance that handles TCP
      * operations.
      */
-    explicit ReceiveCallbackHandler(std::shared_ptr<ContextManager> ctx,
+    explicit ReceiveCallbackHandler(std::unique_ptr<ContextManager>& ctx,
                                     std::shared_ptr<Worker> worker,
                                     AsyncTcpClient &client)
-        : EventHandler(std::move(ctx), std::move(worker)), client(client) {}
+        : EventHandler(ctx, std::move(worker)), m_io(client) {}
 
     /**
      * @brief Handles receive events for incoming TCP data.
@@ -41,7 +41,7 @@ class ReceiveCallbackHandler final : public EventHandler {
 
   private:
     AsyncTcpClient
-        &client; /**< Reference to the TCP client handling the connection. */
+        &m_io; /**< Reference to the TCP client handling the connection. */
 };
 
 } // namespace AsyncTcp

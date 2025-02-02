@@ -1,9 +1,8 @@
 #pragma once
 
+#include <memory>
 #include "ContextManager.hpp"
 #include "Worker.hpp"
-#include "WorkerData.hpp"
-#include <memory>
 
 namespace AsyncTcp {
 
@@ -54,12 +53,12 @@ class  EventHandler {
      * created instance is initialized with the provided context and worker.
      */
     template <typename T, typename... Args>
-    static std::shared_ptr<T> create(std::shared_ptr<ContextManager> ctx,
+    static std::shared_ptr<T> create(ContextManagerPtr& ctx,
                                      std::shared_ptr<Worker> worker,
                                      Args &&...args) {
         static_assert(std::is_base_of<EventHandler, T>::value,
                       "T must be derived from EventHandler");
-        return std::make_shared<T>(std::move(ctx), std::move(worker),
+        return std::make_shared<T>(&ctx, std::move(worker),
                                    std::forward<Args>(args)...);
     }
 
@@ -75,14 +74,12 @@ class  EventHandler {
      * the `EventHandler` for event handling. It is protected to enforce the use
      * of the `create` method for instantiation.
      */
-    explicit EventHandler(std::shared_ptr<ContextManager> ctx,
+    explicit EventHandler(std::unique_ptr<ContextManager>& ctx,
                           std::shared_ptr<Worker> worker)
-        : _ctx(std::move(ctx)), _worker(std::move(worker)) {}
+        : _ctx(ctx), _worker(std::move(worker)) {}
 
-    std::shared_ptr<ContextManager>
-        _ctx; /**< Shared pointer to a `ContextManager` for managing the
-                 context. */
-    std::shared_ptr<Worker> _worker; /**< Shared pointer to a `Worker` for
-                                        managing worker-specific tasks. */
+    std::unique_ptr<ContextManager>&
+        _ctx; /**< Unique pointer to a `ContextManager` for managing the context. */
+    std::shared_ptr<Worker> _worker; /**< Shared pointer to a `Worker` for managing worker-specific tasks. */
 };
 } // namespace AsyncTcp

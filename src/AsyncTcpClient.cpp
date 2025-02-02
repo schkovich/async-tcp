@@ -427,6 +427,10 @@ namespace AsyncTcp {
         _connected_callback_handler = std::move(handler);
     }
 
+    void AsyncTcpClient::setOnErrorCallback(std::shared_ptr<EventHandler> handler) {
+        _connected_callback_handler = std::move(handler);
+    }
+
     void AsyncTcpClient::_onConnectCallback() const {
         const AIPAddress remote_ip = remoteIP();
         (void) remote_ip;
@@ -439,6 +443,9 @@ namespace AsyncTcp {
     }
 
     void AsyncTcpClient::_onErrorCallback(err_t err) {
+        if (_error_callback_handler) {
+            _error_callback_handler->handleEvent();
+        }
         DEBUGV("The ctx failed with the error code: %d", err);
         _ctx->close();
         _ctx = nullptr;

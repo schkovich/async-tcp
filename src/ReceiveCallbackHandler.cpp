@@ -9,7 +9,7 @@ namespace AsyncTcp {
      * @brief Handles incoming data events by setting up necessary worker data.
      *
      * The `handleEvent` method allocates a new `WorkerData` instance, initializes
-     * it with the amount of available data from the client, and associates it with the worker.
+     * it with the amount of available data from the m_io, and associates it with the worker.
      * Finally, it signals the context that there is pending work to be processed.
      *
      * - Allocates a `WorkerData` instance for the incoming data.
@@ -18,10 +18,10 @@ namespace AsyncTcp {
      * - Notifies `_ctx` of pending work for `_worker`.
      */
     void ReceiveCallbackHandler::handleEvent() {
-        auto data = std::make_unique<WorkerData>(client);  // Allocate WorkerData
+        auto data = std::make_unique<WorkerData>(m_io);  // Allocate WorkerData
 
-        // Capture the available size of data from the client
-        auto size = std::make_unique<int>(client.available());
+        // Capture the available size of data from the m_io
+        auto size = std::make_unique<int>(m_io.available());
 
         data->read_size = std::move(size);       // Set read size in WorkerData
 

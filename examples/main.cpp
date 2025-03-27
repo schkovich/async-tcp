@@ -1,10 +1,15 @@
 /*
-    main.cpp
-    This file contains the implementation of a TCP client that connects to a "quote of the day" service and an echo server.
-    It demonstrates asynchronous networking using [async_context](https://www.raspberrypi.com/documentation/pico-sdk/high_level.html#pico_async_context)
-    on an [ESP-Hosted-FG firmware](https://github.com/Networking-for-Arduino/ESPHost).
-    The program periodically requests a quote from the QOTD server, sends it to an echo server and prints response in reverse order.
-*/
+ * AsyncTCPClient Example Implementation
+ *
+ * This file demonstrates the use of the AsyncTCPClient library to connect to a
+ * Quote of the Day (QOTD) server and an Echo server asynchronously.
+ *
+ * It showcases:
+ * - Proper thread safety using SyncBridge for shared resources
+ * - Event handling with EventBridge derivatives
+ * - Core affinity management for non-thread-safe operations
+ * - Asynchronous networking on a dual-core Raspberry Pi Pico
+ */
 
 #ifndef ESPHOSTSPI
 #error This example requires an ESP-Hosted-FG WiFi chip to be defined, see the documentation
@@ -12,57 +17,83 @@
 // rpipico.build.extra_flags=-DESPHOST_RESET=D5 -DESPHOST_HANDSHAKE=D7 -DESPHOST_DATA_READY=D6 -DESPHOST_CS=D1 -DESPHOSTSPI=SPI
 #endif
 
-#include "secrets.h"
 #include <WiFi.h>
-#include "AsyncTcpClient.hpp" // Include the new class for asynchronous TCP client
-#include "ContextManager.hpp"
-#include <iostream>
 #include <algorithm>
-#include "WorkerData.hpp" // To include the WorkerData definition
-#include "ReceiveCallbackHandler.hpp"
-#include "OnConnectedCallbackHandler.h"
-// WiFi credentials
+#include <iostream>
+#include "../include/e5/EchoConnectedHandler.hpp"
+#include "../include/e5/EchoReceivedHandler.hpp"
+#include "../include/e5/IoWrite.hpp"
+#include "../include/e5/QotdConnectedHandler.hpp"
+#include "../include/e5/QotdReceivedHandler.hpp"
+#include "../include/e5/QuoteBuffer.hpp"
+#include "AsyncTcpClient.hpp"
+#include "ContextManager.hpp"
+#include "SerialPrinter.hpp"
+#include "secrets.h" // Contains STASSID, STAPSK, QOTD_HOST, ECHO_HOST, QOTD_PORT, ECHO_PORT
+
+/**
+ * Allocate separate 8KB stack for core1
+ *
+ * When false: 8KB stack is split between cores (4KB each)
+ * When true:  Each core gets its own 8KB stack
+ *
+ * Required for reliable dual-core operation with network stack
+ * and temperature monitoring running on separate cores.
+ */
+bool core1_separate_stack = true;
+
+volatile bool operational = false;  // Global flag for core synchronization
+volatile bool ctx1_ready = false;   // For loop() to wait for setup1()
+
+
+// WiFi credentials from secrets.h
 const auto *ssid = STASSID;
 const auto *password = STAPSK;
-// WiFi management
 WiFiMulti multi;
 
 // Server details
-const auto *host = QOTD_HOST;
+const auto *qotd_host = QOTD_HOST;
 const auto *echo_host = ECHO_HOST;
-constexpr  uint16_t port = 17; // QOTD service port
-constexpr  uint16_t echo_port = 1235; // Echo service port
+constexpr uint16_t qotd_port = QOTD_PORT;  // QOTD service port
+constexpr uint16_t echo_port = ECHO_PORT;  // Echo service port
 
 // TCP clients
 AsyncTcp::AsyncTcpClient qotd_client;
 AsyncTcp::AsyncTcpClient echo_client;
 
+// IP addresses (resolved once at startup)
+IPAddress qotd_ip_address;
+IPAddress echo_ip_address;
+
 // Timing variables
-unsigned long previous_qotd = 0;  // Last time QOTD was requested
-unsigned long previous_echo = 0;  // Last time echo was sent
-unsigned long previous_print = 0;  // Last time echo was sent
+unsigned long previous_red = 0;   // Last time QOTD was requested
+unsigned long previous_yellow = 0;    // Last time echo was sent
+unsigned long previous_blue = 0;   // Last time heap stats were printed
 
 // Constants for intervals
-constexpr  long interval = 5555;  // Interval for QOTD requests (milliseconds)
-constexpr  long echo_interval = 3333;  // Interval for echo requests (milliseconds)
-constexpr  long print_interval = 11111;
+constexpr long red_interval = 5555;       // Interval for QOTD requests (milliseconds)
+constexpr long yellow_interval = 3333;  // Interval for echo requests (milliseconds)
+constexpr long blue_interval = 11111; // Interval for heap stats (milliseconds)
 
-//  global asynchronous context managers and workers
-auto ctx = std::make_shared<AsyncTcp::ContextManager>();
-auto ctx1 = std::make_shared<AsyncTcp::ContextManager>();
-auto print_worker = std::make_shared<AsyncTcp::Worker>();
+// Global asynchronous context managers for each core
+auto ctx0 = std::make_unique<AsyncTcp::ContextManager>();  // Core 0
+auto ctx1 = std::make_unique<AsyncTcp::ContextManager>(); // Core 1
 
-// Buffer for storing the quote
-auto tx_buffer = std::make_shared<std::string>();
+// Thread-safe buffer for storing the quote
+e5::QuoteBuffer qotd_buffer(ctx0);
 
 constexpr int MAX_QOTD_SIZE = 512;
+
 /**
  * @brief Connects to the "quote of the day" server and initiates a connection.
  *
- * This function resolves the host name to an IP address and attempts to connect
- * to the server on the specified port.
+ * This function attempts to connect to the server using the pre-resolved IP address.
  */
-void get_quote_of_the_day();
+void get_quote_of_the_day() {
+    if (0 == qotd_client.connect(qotd_ip_address, qotd_port)) {
+        DEBUGV("Failed to connect to QOTD server.\n");
+    }
+}
 
 /**
  * @brief Connects to the echo server and sends data if available.
@@ -70,208 +101,58 @@ void get_quote_of_the_day();
  * This function checks if the echo client is connected. If not, it attempts to connect.
  * If connected and there is data in the transmission buffer, it sends the data to the server.
  */
-void get_echo();
-
-/**
- * @note Important: These callback functions MUST be declared with 'extern "C"'
- * because they are used as function pointers in the Pico SDK's C-based
- * async_when_pending_worker_t structure. Specifically, they must match the
- * do_work function pointer signature:
- *
- * void (*do_work)(async_context_t *context, async_when_pending_worker_t *worker);
- *
- * Without extern "C", C++ name mangling would make these functions incompatible
- * with the C-style function pointer expected by the SDK.
- */
-/**
- * @brief Reads data from the QOTD server.
- *
- * @param context The asynchronous context.
- * @param worker The worker handling the read operation.
- */
-extern "C" {
-    void read_qotd(async_context_t *context, async_when_pending_worker_t *worker);
-}
-/**
- * @brief Reads data from the echo server.
- *
- * @param context The asynchronous context.
- * @param worker The worker handling the read operation.
- */
-extern "C" {
-    void read_echo(async_context_t *context, async_when_pending_worker_t *worker);
-}
-
-extern "C" {
-    void print_out(async_context_t *context, async_when_pending_worker_t *worker);
-}
-
-extern "C" {
-    size_t simulateProcessData(const char* data, size_t len);
-}
-
-void get_quote_of_the_day() {
-    IPAddress remote_address;
-    hostByName(host, remote_address, 1000);
-
-    if (0 == qotd_client.connect(remote_address, port)) {
-        DEBUGV("Failed to connect to QOTD server.\n");
-    }
-}
-
 void get_echo() {
     if (!echo_client.connected()) {
-        IPAddress remote_address;
-        hostByName(echo_host, remote_address, 1000);
-
-        if (0 == echo_client.connect(remote_address, echo_port)) {
+        if (0 == echo_client.connect(echo_ip_address, echo_port)) {
             DEBUGV("Failed to connect to echo server..\n");
         }
     } else {
-        ctx->acquireLock();
-        if (!tx_buffer->empty()) {
-            echo_client.write(tx_buffer->c_str(), tx_buffer->size());
+        // Get the quote buffer content in a thread-safe manner
+        const std::string buffer_content = qotd_buffer.get();
+
+        if (!buffer_content.empty()) {
+            // Use IoWrite for thread-safe write operations
+            e5::IoWrite io_write(ctx0, echo_client);
+            io_write.write(buffer_content.c_str());
         } else {
             DEBUGV("Nothing to send to echo server.\n");
         }
-        ctx->releaseLock();
     }
 }
 
-// Simulates MQTT library's process_data behavior
-size_t simulateProcessData(const char* data, const size_t len) {
-    (void) data;
-    static int call_count = 0;
-    call_count++;
-
-    // Simulate different consumption patterns:
-    // - First call: consume half
-    // - Second call: consume everything
-    // - Third call: consume nothing
-    // - Then repeat
-
-    switch (call_count % 3) {
-    case 0: return 0;                    // Consume nothing
-    case 1: return len / 2;              // Consume half
-    case 2: return len;                  // Consume all
-    default: return 0;
-    }
-}
-
-void read_qotd(async_context_t *context, async_when_pending_worker_t *worker) {
-    (void) context;
-    auto *pData = static_cast<AsyncTcp::WorkerData *>(worker->user_data);
-
-    if (pData) {
-        const char* data = pData->client.peekBuffer();
-        size_t available = pData->client.peekAvailable();
-
-        size_t consumed = simulateProcessData(data, available);
-        if (consumed > 0) {
-            pData->client.peekConsume(consumed);
-            // Append to tx_buffer instead of overwriting
-             /*
-             Update the tx_buffer with the new quote
-             A lock should not be acquired here.
-             read_qotd is invoked as part of the async_when_pending_worker_t mechanism,
-             and the async_context already ensures that the worker is executed under a lock
-             */
-            tx_buffer->append(data, consumed);
-        }
-
-        DEBUGV("Available: %d, Consumed: %d, Buffer: %d\n",
-                     available, consumed, tx_buffer->length());
-
-    } else {
-        DEBUGV("Invalid pointer\n");
-    }
-
-    worker->user_data = nullptr;
-    worker->work_pending = false;
-}
-
-void print_out(async_context_t *context, async_when_pending_worker_t *worker) {
-    (void) context;
-    auto *pData = static_cast<AsyncTcp::WorkerData *>(worker->user_data);
-
-    if (pData && pData->message) {
-        Serial.println(pData->message->c_str());
-    } else {
-        DEBUGV("No message in the user data.\n");
-    }
-
-    worker->user_data = nullptr;
-    worker->work_pending = false;
-}
-
-void read_echo(async_context_t *context, async_when_pending_worker_t *worker) {
-    (void) context;
-    auto *pData = static_cast<AsyncTcp::WorkerData *>(worker->user_data);
-
-    if (pData) {
-        // Use the minimum of `read_size` and the QOTD protocol maximum size
-        const size_t safe_size = std::min(*pData->read_size, MAX_QOTD_SIZE);
-        char buffer[safe_size];
-        const size_t count = pData->client.read(buffer, safe_size);
-        (void) count;
-        std::string reversed_quote = buffer;
-        std::reverse(reversed_quote.begin(), reversed_quote.end());
-        Serial.println(reversed_quote.c_str());
-    } else {
-        DEBUGV("No TCP client.\n");
-    }
-
-    worker->user_data = nullptr;
-    worker->work_pending = false;
-}
-
-void print_heap_stats() {
+/**
+ * @brief Prints heap statistics using the SerialPrinter.
+ */
+extern "C" void print_heap_stats(AsyncTcp::ContextManagerPtr& ctx) {
     // Get heap data
-    // 1. Get heap stats
     const int freeHeap = rp2040.getFreeHeap();
     const int usedHeap = rp2040.getUsedHeap();
     const int totalHeap = rp2040.getTotalHeap();
 
-    // 2. Format the string with stats
+    // Format the string with stats
     char print_me[64];
-    auto print_me_length = std::make_unique<int>(
-            snprintf(print_me, sizeof(print_me), "Free: %d, Used: %d, Total: %d", freeHeap, usedHeap, totalHeap)
-    );
+    const auto print_me_length =
+            snprintf(print_me, sizeof(print_me), "Free: %d, Used: %d, Total: %d", freeHeap, usedHeap, totalHeap);
+    (void) print_me_length;
 
-    auto data = std::make_unique<AsyncTcp::WorkerData>(echo_client);  // Allocate WorkerData
-
-    // Capture message
-    auto message = std::make_unique<std::string>(print_me);
-
-    data->read_size = std::move(print_me_length);       // Set read size in WorkerData
-    data->message = std::move(message);       // Set message in WorkerData
-
-    // Pass WorkerData to the worker and notify context of pending work
-    print_worker->setWorkerData(std::move(data));
-    DEBUGV("\nSet print worker to pending.\n");
-    DEBUGV("Core %d\n", ctx1->getCore());
-    ctx1->setWorkPending(*print_worker);
+    e5::SerialPrinter serial_printer(ctx);
+    serial_printer.print(print_me);
 }
 
 /**
- * @brief Initializes the Wi-Fi connection and asynchronous context.
- *
- * This function sets up the serial communication, connects to the WiFi network,
- * and initializes the asynchronous context for handling TCP connections.
+ * @brief Initializes the Wi-Fi connection and asynchronous context on Core 0.
  */
 [[maybe_unused]] void setup() {
     Serial.begin(115200);
-    while(!Serial)
-    {
+    while(!Serial) {
         delay(10);
     }
     delay(5000);
     DEBUGV("C0: Blue leader standing by...\n");
     RP2040::enableDoubleResetBootloader();
 
-    // We start by connecting to a Wi-Fi network
+    // Connect to Wi-Fi network
     DEBUGV("Connecting to %s\n", ssid);
-
     multi.addAP(ssid, password);
 
     if (multi.run() != WL_CONNECTED) {
@@ -281,98 +162,90 @@ void print_heap_stats() {
     }
 
     Serial.println("Wi-Fi connected");
-    DEBUGV("IP address:  %s\n", ip->toString().c_str());
 
-    if (!ctx->initDefaultContext()) {
-        // Error handling can be performed here if context initialization fails
-        DEBUGV("ctx init failed on the Core 0\n");
+    // Resolve host names to IP addresses once at startup
+    hostByName(qotd_host, qotd_ip_address, 2000);
+    hostByName(echo_host, echo_ip_address, 2000);
+
+    // Initialize context on Core 0
+    if (!ctx0->initDefaultContext()) {
+        DEBUGV("ctx0 init failed on the Core 0\n");
     }
+    DEBUGV("Core %d\n", ctx0->getCore());
 
-    DEBUGV("Core %d\n", ctx->getCore());
+    // Set up event handlers
+    e5::SerialPrinter serial_printer(ctx1);
 
-    const auto echo_worker = std::make_shared<AsyncTcp::Worker>();
+    // Echo client handlers
+    auto echo_connected_handler = std::make_unique<e5::EchoConnectedHandler>(ctx0, echo_client, serial_printer);
+    echo_client.setOnConnectedCallback(std::move(echo_connected_handler));
 
-    echo_worker->setWorkFunction(read_echo);
+    auto echo_received_handler = std::make_unique<e5::EchoReceivedHandler>(ctx0, echo_client, serial_printer);
+    echo_client.setOnReceivedCallback(std::move(echo_received_handler));
 
-    if(!ctx->addWorker(*echo_worker)) {
-        DEBUGV("Failed to add echo worker\n");
-    }
+    // QOTD client handlers with thread-safe buffer
+    auto qotd_connected_handler = std::make_unique<e5::QotdConnectedHandler>(ctx0, qotd_client, serial_printer);
+    qotd_client.setOnConnectedCallback(std::move(qotd_connected_handler));
 
-    std::shared_ptr<AsyncTcp::ReceiveCallbackHandler> echo_handler = AsyncTcp::EventHandler::create<AsyncTcp::ReceiveCallbackHandler>(ctx, echo_worker, echo_client);
+    auto qotd_received_handler = std::make_unique<e5::QotdReceivedHandler>(ctx0, qotd_buffer, qotd_client);
+    qotd_client.setOnReceivedCallback(std::move(qotd_received_handler));
 
-    echo_client.setOnReceiveCallback(std::move(echo_handler));
-
-    const auto qotd_worker = std::make_shared<AsyncTcp::Worker>();
-
-    qotd_worker->setWorkFunction(read_qotd);
-
-    if(!ctx->addWorker(*qotd_worker)) {
-        DEBUGV("Failed to add qotd worker\n");
-    }
-
-    std::shared_ptr<AsyncTcp::ReceiveCallbackHandler> qotd_handler = AsyncTcp::EventHandler::create<AsyncTcp::ReceiveCallbackHandler>(ctx, qotd_worker, qotd_client);
-
-    qotd_client.setOnReceiveCallback(std::move(qotd_handler));
-
-    const auto connect_worker = std::make_shared<AsyncTcp::Worker>();
-    connect_worker->setWorkFunction(print_out); // Reuse the print_out function
-
-    if(!ctx->addWorker(*connect_worker)) {
-        DEBUGV("Failed to add connect worker\n");
-    }
-
-    std::shared_ptr<AsyncTcp::OnConnectedCallbackHandler> connect_handler =
-        AsyncTcp::EventHandler::create<AsyncTcp::OnConnectedCallbackHandler>(
-            ctx,
-            connect_worker,
-            qotd_client);
-
-    qotd_client.setOnConnectedCallback(std::move(connect_handler));
-
+    operational = true;
 }
 
-// Running on core1
+/**
+ * @brief Initializes the asynchronous context on Core 1.
+ */
 [[maybe_unused]] void setup1() {
-    delay(5000);
+    while (!operational) {
+        delay(10);
+    }
+
     DEBUGV("C1: Red leader standing by...\n");
 
     if (!ctx1->initDefaultContext()) {
-        // Error handling can be performed here if context initialization fails
         DEBUGV("CTX init failed on Core 1\n");
     }
-
     DEBUGV("Core %d\n", ctx1->getCore());
-    print_worker->setWorkFunction(print_out);
+    ctx1_ready = true;
+}
 
-    if(!ctx1->addWorker(*print_worker)) {
-        DEBUGV("Failed to add print worker\n");
+/**
+ * @brief Main loop function on Core 0.
+ * Handles periodic requests to the QOTD and echo servers.
+ */
+[[maybe_unused]] void loop() {
+
+    if (!ctx1_ready) {
+        delay(10);
+        return;
+    }
+
+    const unsigned long currentMillis = millis();
+
+    // Check if it's time to request a new quote
+    if (currentMillis - previous_red >= red_interval) {
+        previous_red = currentMillis;
+        get_quote_of_the_day();
+    }
+
+    // Check if it's time to send data to echo server
+    if (currentMillis - previous_yellow >= yellow_interval) {
+        previous_yellow = currentMillis;
+        get_echo();
+    }
+
+    // Check if it's time to print heap statistics
+    if (currentMillis - previous_blue >= blue_interval) {
+        previous_blue = currentMillis;
+        print_heap_stats(ctx1);
     }
 }
 
 /**
- * @brief Main loop function.
- *
- * This function is called repeatedly and handles the periodic requests to the QOTD and echo servers.
- * It checks the elapsed time since the last request and calls the appropriate functions if the interval has passed.
+ * @brief Loop function for Core 1.
+ * Currently empty as all work is handled through the async context.
  */
-[[maybe_unused]] void loop() {
-    const unsigned long currentMillis = millis();
-    if (currentMillis - previous_qotd >= interval) {
-        previous_qotd = currentMillis;
-        get_quote_of_the_day();
-        DEBUGV("Core in quote: %d\n", ::ctx1->getCore());
-    }
-
-    if (currentMillis - previous_echo >= echo_interval) {
-        previous_echo = currentMillis;
-        get_echo();
-    }
-
-    if (currentMillis - previous_print >= print_interval) {
-        previous_print = currentMillis;
-        print_heap_stats();
-    }
-}
-
 [[maybe_unused]] void loop1() {
+    // Core 1 work is handled through the async context
 }

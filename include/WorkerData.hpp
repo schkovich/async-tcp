@@ -1,7 +1,6 @@
 // WorkerData.hpp
 
 #pragma once
-#include <memory>
 
 namespace AsyncTcp {
     // Forward declaration
@@ -17,13 +16,8 @@ namespace AsyncTcp {
     struct WorkerData
     {
         virtual ~WorkerData() = default;
-
-        explicit WorkerData(AsyncTcpClient& client_ref) : client(client_ref) {}
-        std::unique_ptr<int> read_size; /**< Pointer to the size of data available for reading. */
-        AsyncTcpClient& client; /**< Raw pointer to the associated `AsyncTcpClient` instance. */
-        std::shared_ptr<std::string> message; /**< Shared pointer to message content for print operations on Core 1. */
-
-        // Additional fields can be added here as needed to support more complex data handling.
+        // Derived classes should implement this interface to handle specific data types.
+        WorkerData() = default;
     };
 
 } // namespace AsyncTcp

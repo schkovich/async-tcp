@@ -3,7 +3,8 @@
 #pragma once
 
 #include <pico/async_context_threadsafe_background.h>
-#include "WorkerData.hpp" // To include the WorkerData definition
+#include "WorkerData.hpp"
+#include <memory>
 
 namespace AsyncTcp {
 
@@ -16,6 +17,10 @@ namespace AsyncTcp {
      * `WorkerData` to facilitate custom data processing.
      */
     class Worker {
+
+        async_when_pending_worker_t worker;            /**< Internal worker instance for async processing. */
+        std::unique_ptr<WorkerData> workData{};          /**< Data associated with this worker instance. */
+
     public:
         /**
          * @brief Default constructor for `Worker`.
@@ -55,9 +60,7 @@ namespace AsyncTcp {
          */
         void setWorkerData(std::unique_ptr<WorkerData> data);
 
-    private:
-        async_when_pending_worker_t worker;            /**< Internal worker instance for async processing. */
-        std::unique_ptr<WorkerData> workData;          /**< Data associated with this worker instance. */
+        void setWorkerData(void* data);
     };
 
 } // namespace AsyncTcp

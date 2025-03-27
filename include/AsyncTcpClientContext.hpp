@@ -22,7 +22,9 @@
 #pragma once
 
 #include "Arduino.h"
-#include "lwip/timeouts.h"
+#include "lwip/opt.h"
+#include "lwip/ip.h"
+#include "lwip/tcp.h"
 #include <cassert>
 #include <utility>
 
@@ -36,7 +38,7 @@ typedef void (*discard_cb_t)(void *, AsyncTcpClientContext *);
 
 class AsyncTcpClientContext {
   public:
-    AsyncTcpClientContext(tcp_pcb *pcb, discard_cb_t discard_cb,
+    AsyncTcpClientContext(tcp_pcb *pcb, const discard_cb_t discard_cb,
                           void *discard_cb_arg)
         : _pcb(pcb), _rx_buf(nullptr), _rx_buf_offset(0),
           _discard_cb(discard_cb), _discard_cb_arg(discard_cb_arg), _ref_cnt(0),
@@ -51,7 +53,7 @@ class AsyncTcpClientContext {
         // keepAlive();
     }
 
-    [[maybe_unused]] tcp_pcb *getPCB() { return _pcb; }
+    [[maybe_unused]] [[nodiscard]] tcp_pcb *getPCB() const { return _pcb; }
 
     err_t abort() {
         if (_pcb) {
@@ -114,7 +116,7 @@ class AsyncTcpClientContext {
         }
     }
 
-    int connect(ip_addr_t *addr, uint16_t port) {
+    int connect(ip_addr_t *addr, uint16_t port) const {
         // note: not using `const ip_addr_t* addr` because
         // - `ip6_addr_assign_zone()` below modifies `*addr`
         // - caller's parameter `AsyncTcpClient::connect` is a local copy
@@ -395,7 +397,7 @@ class AsyncTcpClientContext {
         // wait for peer's acks to flush lwIP's output buffer
         uint32_t last_sent = millis();
         while (true) {
-            if (millis() - last_sent > (uint32_t)max_wait_ms) {
+            if (millis() - last_sent > static_cast<uint32_t>(max_wait_ms)) {
 #ifdef DEBUGV
                 // wait until sent: timeout
                 DEBUGV(":wustmo\n");
@@ -462,9 +464,9 @@ class AsyncTcpClientContext {
             }
             if (i) {
                 // Send as a single packet
-                size_t len = write((const char *)buff, i);
+                size_t len = write(reinterpret_cast<const char*>(buff), i);
                 sent += len;
-                if (len != (int)i) {
+                if (len != static_cast<int>(i)) {
                     break; // Write error...
                 }
             } else {
@@ -480,8 +482,8 @@ class AsyncTcpClientContext {
                    uint8_t count = TCP_DEFAULT_KEEP_ALIVE_COUNT) {
         if (idle_sec && intv_sec && count) {
             _pcb->so_options |= SOF_KEEPALIVE;
-            _pcb->keep_idle = (uint32_t)1000 * idle_sec;
-            _pcb->keep_intvl = (uint32_t)1000 * intv_sec;
+            _pcb->keep_idle = static_cast<uint32_t>(1000) * idle_sec;
+            _pcb->keep_intvl = static_cast<uint32_t>(1000) * intv_sec;
             _pcb->keep_cnt = count;
         } else {
             _pcb->so_options &= ~SOF_KEEPALIVE;
@@ -506,7 +508,7 @@ class AsyncTcpClientContext {
 
     [[nodiscard]] bool getSync() const { return _sync; }
 
-    void setSync(bool sync) { _sync = sync; }
+    void setSync(const bool sync) { _sync = sync; }
 
     void setOnConnectCallback(const std::function<void()> &cb) {
         _connectCb = cb; // Set the success callback
@@ -516,13 +518,11 @@ class AsyncTcpClientContext {
         _errorCb = cb; // Set the error callback
     }
 
-    void
-    setOnReceiveCallback(const std::function<void(std::unique_ptr<int>)> &cb) {
+    void setOnReceiveCallback(const std::function<void(std::unique_ptr<int>)> &cb) {
         _receiveCb = cb;
     }
 
-    void setOnAckCallback(
-        const std::function<void(struct tcp_pcb *tpcb, uint16_t len)> &cb) {
+    void setOnAckCallback(const std::function<void(struct tcp_pcb *tpcb, uint16_t len)> &cb) {
         _ackCb = cb;
     }
 
@@ -784,7 +784,7 @@ class AsyncTcpClientContext {
 
     void _error(err_t err) {
         (void)err;
-        DEBUGV(":er %d 0x%08lx\n", (int)err);
+        DEBUGV(":er %d 0x%%\n", static_cast<int>(err));
         // Serial.print("Error: ");
         // Serial.println(err);
         tcp_arg(_pcb, nullptr);

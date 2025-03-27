@@ -1,0 +1,41 @@
+@startuml
+autonumber
+
+actor Employee
+actor TeamLeader as TL
+participant Printer as PR
+
+' Note: Printer maps to async_context, which includes the internal FIFO queue (PrintQueue)
+' and manages VerificationSlot operations via async_context_execute_sync().
+
+== Verified Message Flow ==
+' Employee submits a message that requires verification
+Employee -> PR: async_context_execute_sync(SubmitMessageJob)
+note right of PR: Job steps:\n 1. Lift lid\n 2. Check VerificationSlot\n 3. If empty: place message, close lid, return success\n    Else: close lid, return error
+PR --> Employee: Return (Success / Rejected)
+note right of Employee: Employee blocks until job completes on Core 1.
+
+' TeamLeader periodically checks for messages in the VerificationSlot.
+TL -> PR: async_context_execute_sync(CheckAndProcessMessageJob)
+note right of PR: Job steps:\n 1. Lift lid\n 2. Check VerificationSlot\n 3. If message exists: retrieve message and close lid\n    Else: close lid and exit
+note right of TL: After retrieval, TeamLeader verifies the digital signature (blocking on Core 1)
+alt Signature Valid
+    TL -> PR: async_context_add_at_time_worker_in_ms(PrintJob, delay=0)
+    note right of PR: Schedules PrintJob in internal FIFO (PrintQueue).\n(delay=0 means as soon as possible, subject to queue length)
+    note over PR: PrintJob executes printing action synchronously in async_context.
+else Signature Invalid
+    PR -> PR: Clear VerificationSlot (job completes synchronously)
+end
+
+== Plain Message Flow ==
+' Employee submits a plain message (no verification required)
+Employee -> PR: async_context_add_at_time_worker_in_ms(PlainPrintJob, delay=0)
+note right of PR: Schedules PlainPrintJob directly in the internal FIFO (PrintQueue).\nNo verification is performed.
+note right of Employee: Employee blocks until the job is enqueued and executed on Core 1.
+note over PR: Even with delay=0, if there are pending jobs in the FIFO, execution is delayed.
+
+note over PR
+  **Important:**\nAll actions (compartment operations and printing jobs) are executed via async_context on Core 1.\nWhen one job runs, it blocks Core 1 until its completion.
+end note
+
+@enduml

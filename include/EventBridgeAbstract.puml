@@ -1,0 +1,20 @@
+@startuml
+
+!include ./ContextManagerClassDiagram.puml
+
+namespace AsyncTcp {
+    abstract class EventBridgeAbstract {
+        - const ContextManagerPtr & m_ctx
+
+        --
+        + EventBridgeAbstract(const ContextManagerPtr& ctx)
+        {abstract} + ~EventBridgeAbstract()
+        --
+        + void doWork()
+        {abstract} + void onWork()
+    }
+}
+
+EventBridgeAbstract --> ContextManager : uses
+
+@enduml

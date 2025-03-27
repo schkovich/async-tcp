@@ -1,6 +1,7 @@
 // ReceiveCallbackHandler.cpp
 
 #include "ReceiveCallbackHandler.hpp"
+#include "../examples/tmp e5/WorkerDataTmp.hpp"
 #include "AsyncTcpClient.hpp"
 
 namespace AsyncTcp {
@@ -18,15 +19,15 @@ namespace AsyncTcp {
      * - Notifies `_ctx` of pending work for `_worker`.
      */
     void ReceiveCallbackHandler::handleEvent() {
-        auto data = std::make_unique<WorkerData>(m_io);  // Allocate WorkerData
-
-        // Capture the available size of data from the m_io
-        auto size = std::make_unique<int>(m_io.available());
-
-        data->read_size = std::move(size);       // Set read size in WorkerData
-
-        // Pass WorkerData to the worker and notify context of pending work
-        _worker->setWorkerData(std::move(data));
+        // auto data = std::make_unique<WorkerDataTmp>(m_io);  // Allocate WorkerData
+        //
+        // // Capture the available size of data from the m_io
+        // auto size = std::make_unique<int>(m_io.available());
+        //
+        // data->read_size = std::move(size);       // Set read size in WorkerData
+        //
+        // // Pass WorkerData to the worker and notify context of pending work
+        // _worker->setWorkerData(std::move(data));
         _ctx->setWorkPending(*_worker);
     }
 

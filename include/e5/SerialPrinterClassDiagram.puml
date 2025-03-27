@@ -1,0 +1,17 @@
+@startuml
+
+!include ./../ContextManagerClassDiagram.puml
+
+namespace e5 {
+    class SerialPrinter {
+        - const AsyncTcp::ContextManagerPtr & m_ctx
+        - std::atomic<bool> busy
+        --
+        + SerialPrinter(const AsyncTcp::ContextManagerPtr& ctx)
+        + uint32_t print(const char* message)
+    }
+}
+
+e5::SerialPrinter --> AsyncTcp::ContextManager : uses
+
+@enduml

@@ -49,8 +49,10 @@ namespace AsyncTcp {
      * `user_data` pointer. This allows the worker to access necessary data during
      * processing. The `data` pointer is released, ensuring sole ownership by `user_data`.
      */
-    void Worker::setWorkerData(std::unique_ptr<WorkerData> data) {
-        worker.user_data = data.release();
+    void Worker::setWorkerData(std::unique_ptr<WorkerData> data) { worker.user_data = data.release(); }
+
+    void Worker::setWorkerData(void* data) {
+        worker.user_data = data;
     }
 
 } // namespace AsyncTcp

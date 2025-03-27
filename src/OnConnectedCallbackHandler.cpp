@@ -6,9 +6,9 @@
 namespace AsyncTcp {
 
 void OnConnectedCallbackHandler::handleEvent() {
-    auto data = std::make_unique<WorkerData>(_client);
-    data->message = std::make_shared<std::string>("Connected!");
-    _worker->setWorkerData(std::move(data));
+    // auto data = std::make_unique<WorkerData>(_client);
+    // data->message = std::make_shared<std::string>("Connected!");
+    // _worker->setWorkerData(std::move(data));
     _ctx->setWorkPending(*_worker);
     DEBUGV("OnConnectedCallbackHandler::handleEvent: set work pending");
 }

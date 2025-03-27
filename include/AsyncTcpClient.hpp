@@ -31,10 +31,10 @@
 #include "WiFi.h"
 
 #include <memory>
-#include "Print.h"
 #include "Client.h"
-#include "IPAddress.h"
+#include "EventBridge.hpp"
 #include "EventHandler.hpp"
+#include "Print.h"
 
 namespace AsyncTcp {
 
@@ -56,9 +56,9 @@ namespace AsyncTcp {
     using namespace std::placeholders;
 
 //  Local alias for arduino::IPAddress
-    using AIPAddress = arduino::IPAddress;
+    using AIPAddress = IPAddress;
 //  Local alias for arduino::String
-    using AString = arduino::String;
+    using AString = String;
 
     /**
      * @class AsyncTcpClient
@@ -224,7 +224,7 @@ namespace AsyncTcp {
 
         size_t write(const uint8_t *buf, size_t size) override;
 
-        size_t write(Stream &stream);
+        size_t write(Stream &stream) const;
 
         int available() override;
 
@@ -232,7 +232,7 @@ namespace AsyncTcp {
 
         int read(uint8_t *buf, size_t size) override;
 
-        int read(char *buf, size_t size);
+        int read(char *buf, size_t size) const;
 
         int peek() override;
 
@@ -257,23 +257,23 @@ namespace AsyncTcp {
             (void) stop(0);
         }
 
-        bool flush(unsigned int maxWaitMs);
+        [[nodiscard]] bool flush(unsigned int maxWaitMs) const;
 
-        bool stop(unsigned int maxWaitMs);
+        [[nodiscard]] bool stop(unsigned int maxWaitMs) const;
 
         uint8_t connected() override;
 
         explicit operator bool() override;
 
-        [[maybe_unused]] AIPAddress remoteIP() const;
+        [[maybe_unused]] [[nodiscard]] AIPAddress remoteIP() const;
 
-        [[maybe_unused]] uint16_t remotePort() const;
+        [[maybe_unused]] [[nodiscard]] uint16_t remotePort() const;
 
-        AIPAddress localIP();
+        [[nodiscard]] AIPAddress localIP() const;
 
-        [[maybe_unused]] uint16_t localPort();
+        [[maybe_unused]] [[nodiscard]] uint16_t localPort() const;
 
-        [[maybe_unused]] static void setLocalPortStart(uint16_t port) {
+        [[maybe_unused]] static void setLocalPortStart(const uint16_t port) {
             _localPort = port;
         }
 
@@ -289,7 +289,7 @@ namespace AsyncTcp {
 
         void keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC,
                        uint16_t intv_sec = TCP_DEFAULT_KEEP_ALIVE_INTERVAL_SEC,
-                       uint8_t count = TCP_DEFAULT_KEEP_ALIVE_COUNT);
+                       uint8_t count = TCP_DEFAULT_KEEP_ALIVE_COUNT) const;
 
         [[maybe_unused]] [[nodiscard]] bool isKeepAliveEnabled() const;
 
@@ -299,7 +299,7 @@ namespace AsyncTcp {
 
         [[maybe_unused]] [[nodiscard]] uint8_t getKeepAliveCount() const;
 
-        [[maybe_unused]] void disableKeepAlive() {
+        [[maybe_unused]] void disableKeepAlive() const {
             keepAlive(0, 0, 0);
         }
 
@@ -328,7 +328,9 @@ namespace AsyncTcp {
         void setSync(bool sync) const;
 
         void setOnReceiveCallback(std::shared_ptr<EventHandler> handler);
-        void setOnConnectedCallback(std::shared_ptr<EventHandler> handler);
+        void setOnReceivedCallback(std::unique_ptr<EventBridge> worker);
+        void setOnConnectCallback(std::shared_ptr<EventHandler> handler);
+        void setOnConnectedCallback(std::unique_ptr<EventBridge> worker);
         void setOnErrorCallback(std::shared_ptr<EventHandler> handler);
 
     protected:
@@ -336,14 +338,8 @@ namespace AsyncTcp {
         std::shared_ptr<EventHandler> _receive_callback_handler;
         std::shared_ptr<EventHandler> _connected_callback_handler;
         std::shared_ptr<EventHandler> _error_callback_handler;
-
-        [[maybe_unused]] static int8_t _s_connected(void *arg, void *tpcb, int8_t err);
-
-        [[maybe_unused]] static void _s_err(void *arg, int8_t err);
-
-        static int8_t _connected(void *tpcb, int8_t err);
-
-        [[maybe_unused]] void _err(int8_t err);
+        std::unique_ptr<EventBridge> _received_callback_worker;
+        std::unique_ptr<EventBridge> _connected_callback_worker;
 
         inline static bool defaultSync = true;
 
@@ -353,14 +349,12 @@ namespace AsyncTcp {
 
         static uint16_t _localPort;
 
-        std::function<void(std::unique_ptr<int>)> _receiveCallback;
-
         void _onConnectCallback() const;
 
         void _onErrorCallback(err_t err);
 
         void _onReceiveCallback(std::unique_ptr<int> size) const;
 
-        void _onAckCallback(struct tcp_pcb *tpcb, uint16_t len) const;
+        void _onAckCallback(tcp_pcb *tpcb, uint16_t len) const;
     };
 } // namespace AsyncTcp

@@ -25,10 +25,10 @@ public:
      * operations.
      */
     explicit OnConnectedCallbackHandler(
-        std::shared_ptr<ContextManager> ctx,
+        std::unique_ptr<ContextManager> &ctx,
         std::shared_ptr<Worker> worker,
         AsyncTcpClient& client)
-        : EventHandler(std::move(ctx), std::move(worker))
+        : EventHandler(ctx, std::move(worker))
         , _client(client) {}
 
     /**

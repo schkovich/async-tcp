@@ -40,8 +40,7 @@ class ReceiveCallbackHandler final : public EventHandler {
     void handleEvent() override;
 
   private:
-    AsyncTcpClient
-        &m_io; /**< Reference to the TCP client handling the connection. */
+    AsyncTcpClient &m_io; /**< Reference to the TCP client handling the connection. */
 };
 
 } // namespace AsyncTcp

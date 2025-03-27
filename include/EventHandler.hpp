@@ -78,8 +78,7 @@ class  EventHandler {
                           std::shared_ptr<Worker> worker)
         : _ctx(ctx), _worker(std::move(worker)) {}
 
-    std::unique_ptr<ContextManager>&
-        _ctx; /**< Unique pointer to a `ContextManager` for managing the context. */
+    ContextManagerPtr& _ctx; /**< Unique pointer to a `ContextManager` for managing the context. */
     std::shared_ptr<Worker> _worker; /**< Shared pointer to a `Worker` for managing worker-specific tasks. */
 };
 } // namespace AsyncTcp

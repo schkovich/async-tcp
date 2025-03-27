@@ -1,0 +1,16 @@
+@startuml
+'https://plantuml.com/class-diagram
+
+!include EventBridgeAbstract.puml
+
+namespace AsyncTcp {
+
+    class PerpetualBridge extends EventBridgeAbstract {
+        - PerpetualWorker m_worker;
+
+        --
+        + PerpetualBridge(const ContextManagerPtr& ctx)
+        + void onWork() override
+    }
+}
+@enduml

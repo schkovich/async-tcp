@@ -7,16 +7,25 @@
  * a clean interface between the C-style async_context API from the Pico SDK and
  * object-oriented C++ event handling.
  *
+ * The EventBridge implements two types of worker patterns:
+ *
+ * 1. Persistent "when pending" workers - These remain registered with the context manager
+ *    until explicitly removed. Their lifecycle is typically managed externally.
+ *
+ * 2. Ephemeral "at time" workers - These execute once at a specific time and are automatically
+ *    removed from the context manager after execution. They can optionally manage their own
+ *    lifecycle through self-ownership.
+ *
  * The EventBridge follows the Template Method pattern, managing the registration and
- * lifecycle of a Worker instance with the async context while providing a virtual
+ * lifecycle of workers with the async context while providing a virtual
  * method (onWork) for derived classes to implement specific event handling logic.
  *
  * Key features:
  * - Thread-safe execution with core affinity guarantees
  * - Automatic worker registration and cleanup
+ * - Support for self-managed lifecycle for ephemeral workers
  * - Clean separation between async mechanism and business logic
- * - Support for various event handling scenarios
- *
+ * 
  * @ingroup AsyncTCPClient
  */
 #pragma once
@@ -25,7 +34,6 @@
 
 #include "ContextManager.hpp"
 #include "EphemeralWorker.hpp"
-#include "e5/LedDebugger.hpp"
 
 namespace AsyncTcp {
 
@@ -82,9 +90,9 @@ namespace AsyncTcp {
         friend void worker_bridging_function(async_context_t* context, async_when_pending_worker_t* worker);
         friend void ephemeral_bridging_function(async_context_t* context, async_work_on_timeout* worker);
         Worker m_worker = {}; /**< Worker instance that interfaces with the async context */
-        EphemeralWorker m_ephemeral_worker; /**< Ephemeral worker instance for immediate execution */
+        EphemeralWorker m_ephemeral_worker; /**< Ephemeral worker instance for timed execution */
         const ContextManagerPtr& m_ctx; /**< Reference to the context manager */
-        std::unique_ptr<EventBridge> m_self = nullptr; // Self-reference for cleanup
+        std::unique_ptr<EventBridge> m_self = nullptr; /**< Self-reference for automatic cleanup */
 
         /**
          * @brief Executes the work by calling the virtual onWork method.
@@ -95,21 +103,34 @@ namespace AsyncTcp {
         void doWork();
 
 
-        // Method to release ownership
+        /**
+         * @brief Releases ownership of self, transferring lifecycle management.
+         *
+         * This method is typically called in the bridging function to transfer ownership
+         * to a local variable, which will destroy the EventBridge when it goes out of scope.
+         *
+         * @return A unique pointer to this EventBridge instance
+         */
         std::unique_ptr<EventBridge> releaseOwnership();
 
-
-        [[nodiscard]] virtual e5::LedDebugger::CombinedState getHandlerState() const = 0;
-
     protected:
-        // Method to take ownership of self
+        /**
+         * @brief Takes ownership of self, enabling self-managed lifecycle.
+         *
+         * This method is typically used with ephemeral workers to allow them to manage
+         * their own lifecycle. When an ephemeral worker takes ownership of itself,
+         * it will be automatically destroyed after its execution completes.
+         *
+         * @param self A unique pointer to this EventBridge instance
+         */
         void takeOwnership(std::unique_ptr<EventBridge> self);
 
         /**
          * @brief Pure virtual method that derived classes must implement to define their event handling logic.
          *
          * This method is called when the worker is executed. Derived classes should implement
-         * this method to perform their specific event handling task.
+         * this method to perform their specific event handling task. It will be executed in the
+         * context of the worker's core, ensuring proper core affinity.
          */
         virtual void onWork() = 0;
 

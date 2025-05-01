@@ -17,6 +17,7 @@
  * - Setting up the bridging functions for C to C++ callbacks
  * - Proper cleanup when the EventBridge is destroyed
  * - Triggering work execution with core affinity guarantees
+ * - Queue monitoring for performance analysis
  */
 
 #include "EventBridge.hpp"
@@ -25,7 +26,7 @@
 #include "e5/WorkerCounter.hpp"
 
 namespace e5 {
-    QueueMonitor g_queueMonitor;
+    QueueMonitor queue_monitor;
 }
 
 namespace AsyncTcp {
@@ -39,7 +40,8 @@ namespace AsyncTcp {
      *
      * @param ctx Shared pointer to the context manager that will execute this worker
      */
-    EventBridge::EventBridge(const ContextManagerPtr& ctx) : m_ctx(ctx) {
+    EventBridge::
+    EventBridge(const ContextManagerPtr& ctx) : m_ctx(ctx) {
         m_worker = Worker();
         m_worker.setWorkFunction(&worker_bridging_function);
         // Store a direct pointer to this EventBridge instance
@@ -76,8 +78,8 @@ namespace AsyncTcp {
             if (m_worker.getWorker()->do_work != nullptr) {
                 m_ctx->removeWorker(m_worker);
             }
-            // Otherwise, m_worker is in its default state, so this was an ephemeral worker
         }
+        // Otherwise, m_worker is in its default state, so this was an ephemeral worker
     }
 
     /**
@@ -101,18 +103,10 @@ namespace AsyncTcp {
      *
      * @param run_in The delay in microseconds after which to queue the worker for execution
      */
-    void EventBridge::run(const uint32_t run_in) {
-        DEBUGV("[c%d][%llu][INFO] EventBridge::run\n", rp2040.cpuid(), time_us_64());
+    void EventBridge::run(const uint32_t run_in) { // NOLINT
         if (const auto result = m_ctx->addEphemeralWorker(m_ephemeral_worker, run_in); false == result) {
-
-                DEBUGV("[c%d][%llu][ERROR] EventBridge::run - Failed to add ephemeral worker: %p, error: %lu\n",
-                    rp2040.cpuid(), time_us_64(), this, result);
-
-            // Infinite busy-wait loop for debugging:
-            while (true) {
-                e5::LedDebugger::setState(e5::LedDebugger::NONE_BRooo);
-                m_ctx->waitUntil(make_timeout_time_us(10000));
-            }
+            DEBUGV("[c%d][%llu][ERROR] EventBridge::run - Failed to add ephemeral worker: %p, error: %lu\n",
+                rp2040.cpuid(), from_us_since_boot(), this, result);
         }
     }
 
@@ -121,9 +115,9 @@ namespace AsyncTcp {
      *
      * This method is called by the bridging function when the worker is executed.
      * It cannot be overridden by derived classes, ensuring consistent execution flow.
+     * This is the template method in the Template Method pattern.
      */
     void EventBridge::doWork() {
-        DEBUGV("[c%d][%llu][INFO] EventBridge::doWork\n", rp2040.cpuid(), time_us_64());
         onWork();
     }
 
@@ -145,6 +139,7 @@ namespace AsyncTcp {
      *
      * This method is typically called in the bridging function to transfer ownership
      * to a local variable, which will destroy the EventBridge when it goes out of scope.
+     * This is crucial for self-cleaning ephemeral workers.
      *
      * @return A unique pointer to this EventBridge instance
      */
@@ -163,17 +158,15 @@ namespace AsyncTcp {
      * @param context The async context that is executing the worker
      * @param worker The async_when_pending_worker_t that is being executed
      */
-    void worker_bridging_function(async_context_t* context, async_when_pending_worker_t* worker) {
+    void worker_bridging_function(async_context_t* context, async_when_pending_worker_t* worker) { // NOLINT
         (void)context; // Unused parameter
-        DEBUGV("[c%d][%llu][INFO] EventBridge::worker_bridging_function running on core: %d\n",
-            rp2040.cpuid(), time_us_64(), context->core_num);
 
         if (worker && worker->user_data) {
             // Direct cast to EventBridge* since we're storing the EventBridge instance directly
             static_cast<EventBridge*>(worker->user_data)->doWork();
         } else {
-            DEBUGV("[c%d][%llu][ERROR] SyncBridge::worker_bridging_function - invalid worker or user data\n",
-                rp2040.cpuid(), time_us_64());
+            DEBUGV("[AC-%d][%llu][ERROR] SyncBridge::worker_bridging_function - invalid worker or user data\n",
+                rp2040.cpuid(), from_us_since_boot());
         }
     }
 
@@ -184,40 +177,35 @@ namespace AsyncTcp {
      * It retrieves the EventBridge instance from the worker's user_data, calls its doWork method,
      * and then releases ownership to trigger cleanup when the function returns.
      *
+     * This function also handles queue monitoring for performance tracking, and toggles the
+     * LED_BUILTIN pin to provide visual feedback during worker execution.
+     *
      * Note: By the time this function is called, the async context has already removed the
      * worker from its internal list, so no explicit removal is needed.
      *
      * @param context The async context that is executing the worker
      * @param worker The async_work_on_timeout that is being executed
      */
-    void ephemeral_bridging_function(async_context_t* context, async_work_on_timeout* worker) {
-        (void)context; // Unused parameter
+    void ephemeral_bridging_function(async_context_t* context, async_work_on_timeout* worker) { // NOLINT
 
         // Check if it's time to sample
-        if (e5::g_queueMonitor.shouldSample()) {
+        if (e5::queue_monitor.shouldSample()) {
             // Get worker counts
             const auto atTimeCount = e5::WorkerCounter::countAtTimeWorkers(context);
             const auto whenPendingCount = e5::WorkerCounter::countWhenPendingWorkers(context);
-
             // Update queue monitor
-            e5::g_queueMonitor.updateQueueSize(atTimeCount, whenPendingCount);
+            e5::queue_monitor.updateQueueSize(atTimeCount, whenPendingCount);
         }
-
+        digitalWrite(LED_BUILTIN, HIGH);
         if (worker && worker->user_data) {
-            const auto pWorker = static_cast<EventBridge*>(worker->user_data);
-            // Direct cast to EventBridge* since we're storing the EventBridge instance directly
-            const auto local_owner = pWorker->releaseOwnership();
-            local_owner->doWork();
+            const auto pBridge = static_cast<EventBridge*>(worker->user_data);
+            pBridge->doWork();
+            pBridge->releaseOwnership();
         } else {
-            DEBUGV("[c%d][%llu][ERROR] EventBridge::ephemeral_bridging_function - invalid worker or user data\n",
-                rp2040.cpuid(), time_us_64());
-            // intentional debug stopping
-            while (true) {
-                e5::LedDebugger::setState(e5::LedDebugger::NONE_oooGL);
-                async_context_wait_until(context, make_timeout_time_us(100000));
-            }
+            DEBUGV("\033[1;31m[AC-%d][%llu][ERROR] EventBridge::ephemeral_bridging_function - invalid worker or user data\033[1;37m\n",
+                rp2040.cpuid(), from_us_since_boot());
         }
+        digitalWrite(LED_BUILTIN, LOW);
     }
-
 
 }

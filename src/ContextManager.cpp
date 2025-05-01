@@ -3,70 +3,75 @@
  * @brief Implements asynchronous context management and worker scheduling for the AsyncTCP library.
  *
  * This file defines the ContextManager class methods which manage the asynchronous execution
- * context, worker addition, thread-safe lock handling, and synchronous execution via a dedicated API.
+ * context, worker scheduling, thread-safe lock handling, and synchronous execution across cores.
  *
- * The key responsibilities include:
- *   - Initializing and deinitializing the background asynchronous context.
- *   - Managing Workers: adding them to the context, marking work as pending.
- *   - Providing a thin wrapper over async_context_execute_sync for synchronous work execution.
- *   - Coordinating thread-safe access via acquireLock and releaseLock.
+ * The ContextManager provides several critical capabilities:
+ *   - Safe cross-core execution through the execWorkSynchronously mechanism
+ *   - Worker lifecycle management (adding, removing, signaling)
+ *   - Lock-based thread safety for atomic operations
+ *   - Resource management with explicit initialization and cleanup
  *
- * @note The execWorkSynchronously method forwards all parameters directly to
- * async_context_execute_sync, which expects a HandlerFunction (function pointer) and a void* parameter.
+ * Most methods verify the context's validity before performing operations, making
+ * the class robust against improper usage sequences (e.g., using before initialization).
+ *
+ * @note The execWorkSynchronously method is a cornerstone of the thread-safety patterns
+ * used throughout the library, as it guarantees that operations execute in the proper context.
  */
 
-#include <sys/stat.h>
 #include "ContextManager.hpp"
 #include "Arduino.h"
-#include <chrono>
-#include <future>
-#include "e5/LedDebugger.hpp"
 
 namespace AsyncTcp {
 
-/**
-     * @brief Constructs a ContextManager instance.
+    /**
+     * @brief Constructs a ContextManager instance with a specific background context.
      *
      * This constructor initializes the ContextManager without immediately setting up the asynchronous context.
-     * The context must be explicitly initialized by calling initDefaultContext, allowing the consuming code
-     * to control the timing and conditions of initialization. It also allows the consuming code to handle
-     * initialization failures explicitly.
+     * The context must be explicitly initialized by calling initDefaultContext(), allowing the consuming code
+     * to control the timing and conditions of initialization and handle initialization failures explicitly.
+     *
+     * @param context Reference to the background context structure to be managed
      */
-    ContextManager::ContextManager() = default;
+    ContextManager::ContextManager(async_context_threadsafe_background_t& context) : m_context(&context), m_context_core(&context.core) {}
 
     /**
      * @brief Destructor that deinitializes the background asynchronous context.
      *
-     * If the context was successfully initialized, the destructor calls async_context_deinit
-     * to deinitialize it and then resets the internal state.
+     * If the context was successfully initialized, the destructor:
+     * 1. Calls async_context_deinit to properly clean up the context
+     * 2. Nullifies internal pointers to prevent use-after-free issues
+     * 3. Resets the initialization flag
+     *
+     * This ensures all resources are properly released even if the user code doesn't
+     * explicitly clean up the context.
      */
     ContextManager::~ContextManager() {
         if (initiated) {
             // Deinitialize the thread-safe background context
-            async_context_deinit(ctx);
-            ctx = nullptr;
-            background_ctx = {};
+            async_context_deinit(m_context_core);
+            m_context_core = nullptr;
+            m_context = {};
             initiated = false;
         }
     }
     
     /**
-     * @brief Initializes the default asynchronous context.
+     * @brief Initializes the asynchronous context with the provided configuration.
      *
-     * This method sets up the `background_ctx` with the default configuration and assigns `ctx`
-     * to the core of `background_ctx` if initialization succeeds. It must be called explicitly
-     * by the consuming code to control the timing and conditions of initialization.
+     * This method prepares the context for worker registration and task execution by:
+     * 1. Checking if the context is already initialized (to prevent double initialization)
+     * 2. Calling async_context_threadsafe_background_init with the provided configuration
+     * 3. Setting the initiated flag if initialization succeeds
      *
-     * @return `true` if the context is successfully initialized, `false` otherwise.
+     * @param config Reference to a configuration structure for the background context
+     * @return true if initialization succeeded or context was already initialized, false on failure
      *
      * By separating initialization from construction, this design allows for explicit error handling
      * and resource management, which is crucial in environments where exceptions are not used.
      */
-    bool ContextManager::initDefaultContext() {
+    bool ContextManager::initDefaultContext(async_context_threadsafe_background_config_t& config) {
         if (false == initiated) {
-            async_context_threadsafe_background_config_t config = async_context_threadsafe_background_default_config();
-            if (async_context_threadsafe_background_init(&background_ctx, &config)) {
-                ctx = &background_ctx.core;
+            if (async_context_threadsafe_background_init(m_context, &config)) {
                 initiated = true;
                 return true;
             }
@@ -76,40 +81,41 @@ namespace AsyncTcp {
     }
 
     /**
-     * @brief Adds a Worker to the asynchronous context.
+     * @brief Adds a Worker to the asynchronous context for ongoing task execution.
      *
-     * Attempts to register the provided Worker with the current context.
-     * If the context pointer is null or the worker addition fails, returns false.
+     * This method registers a Worker object with the context, allowing it to be
+     * triggered for execution when needed. It first checks context validity, then
+     * attempts to add the worker to the underlying SDK context.
      *
-     * @param worker Reference to the Worker instance to be added.
-     * @return true if the worker was added successfully; false otherwise.
+     * @param worker Reference to the Worker instance to be added
+     * @return true if the worker was successfully added, false if the context is invalid or addition failed
      */
     bool ContextManager::addWorker(Worker &worker) const {
-        if (!ctx) {
+        if (!m_context_core) {
             return false;
         }
-        if (!async_context_add_when_pending_worker(ctx, worker.getWorker())) {
+        if (!async_context_add_when_pending_worker(m_context_core, worker.getWorker())) {
             DEBUGV("ContextManager::addWorker - Failed to add worker!\n");
             return false;
         }
-        DEBUGV("ContextManager::addWorker - when pending worker added!\n");
         return true;
     }
 
     /**
-     * @brief Adds a Worker to the asynchronous context.
+     * @brief Adds a raw worker structure to the context.
      *
-     * Attempts to register the provided Worker with the current context.
-     * If the context pointer is null or the worker addition fails, returns false.
+     * This lower-level version allows adding workers defined using the raw SDK structures,
+     * providing flexibility for advanced use cases. Like the higher-level version, it
+     * checks context validity before attempting the operation.
      *
-     * @param worker Reference to the Worker instance to be added.
-     * @return true if the worker was added successfully; false otherwise.
+     * @param worker Reference to the worker structure to be added
+     * @return true if the worker was successfully added, false if the context is invalid or addition failed
      */
     bool ContextManager::addWorker(async_when_pending_worker_t& worker) const {
-        if (!ctx) {
+        if (!m_context_core) {
             return false;
         }
-        if (!async_context_add_when_pending_worker(ctx, &worker)) {
+        if (!async_context_add_when_pending_worker(m_context_core, &worker)) {
             DEBUGV("ContextManager::addWorker 2 - Failed to add worker!\n");
             return false;
         }
@@ -117,9 +123,23 @@ namespace AsyncTcp {
         return true;
     }
 
+    /**
+     * @brief Adds an ephemeral worker that executes once after an optional delay.
+     *
+     * This method schedules a temporary worker that will be automatically removed after
+     * execution. It performs several validations to ensure the worker is properly configured:
+     * 1. Checks if the context is valid
+     * 2. Verifies that the worker has a work handler function
+     * 3. Confirms that user data is set
+     * 4. Attempts to add the worker with the specified delay
+     *
+     * @param worker The ephemeral worker to schedule
+     * @param delay Milliseconds to wait before executing the worker (0 = immediate execution)
+     * @return true if the worker was successfully scheduled, false if any validation failed
+     */
     bool ContextManager::addEphemeralWorker(EphemeralWorker& worker, const uint32_t delay) const {
 
-        if (!ctx) {
+        if (!m_context_core) {
             DEBUGV("ContextManager::addEphemeralWorker - no context!\n");
             return false;
         }
@@ -136,124 +156,163 @@ namespace AsyncTcp {
             return false;
         }
 
-        if (!async_context_add_at_time_worker_in_ms(ctx, worker_ptr, delay)) {
+        if (!async_context_add_at_time_worker_in_ms(m_context_core, worker_ptr, delay)) {
             DEBUGV("ContextManager::addEphemeralWorker - Failed to add worker!\n");
             return false;
         }
 
-        DEBUGV("[c%d][%llu][INFO] ContextManager::addEphemeralWorker - %p\n",
-            rp2040.cpuid(), time_us_64(), worker_ptr->user_data);
-
         return true;
     }
 
+    /**
+     * @brief Removes a previously added worker from the context.
+     *
+     * This prevents the worker from being executed even if setWorkPending() is called.
+     * The method checks context validity before attempting the removal.
+     *
+     * @param worker Reference to the Worker instance to be removed
+     * @return true if the worker was successfully removed, false if the context is invalid or removal failed
+     */
     bool ContextManager::removeWorker(Worker &worker) const {
-        if (!ctx) {
+        if (!m_context_core) {
             DEBUGV("ContextManager::removeWorker - no context!\n");
             return false;
         }
 
-        if (!async_context_remove_when_pending_worker(ctx, worker.getWorker())) {
+        if (!async_context_remove_when_pending_worker(m_context_core, worker.getWorker())) {
             DEBUGV("ContextManager::removeWorker - Failed to remove when pending worker!\n");
             return false;
         }
 
-        DEBUGV("ContextManager::removeWorker - when pending worker removed!\n");
         return true;
     }
 
+    /**
+     * @brief Removes an ephemeral worker from the scheduled queue before it executes.
+     *
+     * This method can cancel a previously scheduled ephemeral worker if it hasn't
+     * executed yet. It checks context validity before attempting the removal.
+     *
+     * @param worker Reference to the EphemeralWorker instance to be removed
+     * @return true if the worker was successfully removed, false if the context is invalid or removal failed
+     */
     bool ContextManager::removeWorker(EphemeralWorker &worker) const {
-        if (!ctx) {
+        if (!m_context_core) {
             return false;
         }
 
-        if (!async_context_remove_at_time_worker(ctx, worker.getWorker())) {
+        if (!async_context_remove_at_time_worker(m_context_core, worker.getWorker())) {
             DEBUGV("ContextManager::removeWorker(Worker &worker) - Failed to remove at time worker!\n");
             return false;
         }
 
         return true;
-
     }
 
     /**
-     * @brief Marks a Worker as having pending work within the context.
+     * @brief Marks a worker as having pending work to be processed.
      *
-     * Signals that the specified Worker has work to be processed by invoking
-     * async_context_set_work_pending. If the context pointer is null, a debug message is logged.
+     * This method signals the asynchronous context that the worker has work ready
+     * to be executed. The context will call the worker's do_work function as soon
+     * as the event loop processes the request.
      *
-     * @param worker Reference to the Worker instance for which work is pending.
+     * @param worker Reference to the Worker instance to be signaled
      */
     void ContextManager::setWorkPending(Worker &worker) const {
-        if (ctx) {
-            async_context_set_work_pending(ctx, worker.getWorker());
-        }
-        else {
-            DEBUGV("CTX not available\n");
+        if (m_context_core) {
+            async_context_set_work_pending(m_context_core, worker.getWorker());
         }
     }
 
+    /**
+     * @brief Marks a raw worker structure as having pending work.
+     *
+     * This lower-level version works with raw SDK worker structures, providing
+     * the same functionality as the Worker-based version.
+     *
+     * @param worker Reference to the worker structure to be signaled
+     */
     void ContextManager::setWorkPending(async_when_pending_worker_t& worker) const {
-        if (ctx) {
-            async_context_set_work_pending(ctx, &worker);
-        }
-        else {
-            DEBUGV("CTX not available\n");
+        if (m_context_core) {
+            async_context_set_work_pending(m_context_core, &worker);
         }
     }
 
     /**
      * @brief Acquires a blocking lock on the asynchronous context.
      *
-     * Ensures exclusive access to the context by preventing interrupts from other threads
-     * until releaseLock is called.
+     * This method blocks until it can acquire exclusive access to the context,
+     * ensuring that operations between acquireLock() and releaseLock() execute
+     * atomically without interference from other threads or interrupt handlers.
+     *
+     * @warning Always pair this with a releaseLock() call to prevent deadlocks
      */
     void ContextManager::acquireLock() const {
-        if (ctx) {
-            async_context_acquire_lock_blocking(ctx);
+        if (m_context_core) {
+            async_context_acquire_lock_blocking(m_context_core);
         }
     }
 
     /**
-     * @brief Releases the lock on the asynchronous context.
+     * @brief Releases a previously acquired lock on the context.
      *
-     * This function should be called after acquireLock to enable other threads to access the context.
+     * This should always be called after a successful acquireLock() to allow
+     * other threads and interrupt handlers to access the context.
      */
     void ContextManager::releaseLock() const {
-        if (ctx) {
-            async_context_release_lock(ctx);
+        if (m_context_core) {
+            async_context_release_lock(m_context_core);
         }
     }
 
     /**
-     * @brief Executes a handler function synchronously on the asynchronous context's core.
+     * @brief Executes a function synchronously on the context's core.
      *
-     * This method serves as a thin wrapper around the async_context_execute_sync function.
-     * It forwards the provided callback (HandlerFunction) along with its associated parameter
-     * to async_context_execute_sync for synchronous execution.
+     * This is the primary method for ensuring thread-safe execution across cores.
+     * It guarantees that the handler function will be executed in the context's
+     * core, even if called from a different core. The method blocks until execution
+     * is complete, providing a synchronous interface for cross-core operations.
      *
-     * @param handler The function pointer (HandlerFunction) to execute. Must conform to the expected signature.
-     * @param param   Pointer to the parameters required by the handler function.
-     * @return The return value from the handler function.
+     * This method is the foundation for patterns like SyncBridge that need guaranteed
+     * execution context for thread safety.
+     *
+     * @param handler Function to execute in the context's core
+     * @param param Pointer to data needed by the handler function
+     * @return The value returned by the handler function
      */
     uint32_t ContextManager::execWorkSynchronously(const HandlerFunction& handler, void* param) const {
-        const auto result = async_context_execute_sync(ctx, handler, param);
-        return result; // Return success code
+        return async_context_execute_sync(m_context_core, handler, param);
     }
 
     /**
-     * @brief Retrieves the core number associated with the asynchronous context.
+     * @brief Gets the CPU core number where this context is running.
      *
-     * @return The core number managed by the asynchronous context.
+     * Useful for logging or when implementing core-specific behavior.
+     *
+     * @return The core number (typically 0 or 1 on RP2040 platforms)
      */
-    uint8_t ContextManager::getCore() const { return ctx->core_num; }
+    uint8_t ContextManager::getCore() const { return m_context_core->core_num; }
 
+    /**
+     * @brief Verifies that the caller holds the context lock.
+     *
+     * This diagnostic function checks that the lock is held by the current execution context,
+     * useful for debugging and validating code that requires the lock to be held.
+     */
     void ContextManager::checkLock() const {
-        // async_context_wait_until(ctx, time_us_64() + 100000);
-        async_context_lock_check(ctx);
+        async_context_lock_check(m_context_core);
     }
 
+    /**
+     * @brief Blocks the calling thread until the specified time is reached.
+     *
+     * This correctly yields the core within the context's execution model,
+     * allowing other tasks to run while waiting. It's a thread-safe alternative
+     * to basic delay functions that properly integrates with the async context.
+     *
+     * @param until The absolute time until which to wait
+     */
     void ContextManager::waitUntil(const absolute_time_t until) const {
-        async_context_wait_until(ctx, until);
+        async_context_wait_until(m_context_core, until);
     }
 } // namespace AsyncTcp

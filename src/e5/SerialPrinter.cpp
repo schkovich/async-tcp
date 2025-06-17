@@ -11,27 +11,25 @@
 #include "ContextManager.hpp"
 #include "e5/MessageBuffer.hpp"
 #include "e5/PrintHandler.hpp"
+namespace e5 {
+    int64_t elapsed();
+}
 
 namespace e5 {
 
     // Constructor implementation
     SerialPrinter::SerialPrinter(const ContextManagerPtr& ctx) : m_ctx(ctx) {}
 
-    // Print method implementation
-    uint32_t SerialPrinter::print(const char* message) {
-        MessageBuffer buf(message);
-        DEBUGV("[c%d][%llu][INFO] SerialPrinter::print - message size: %d\n", rp2040.cpuid(), time_us_64(), buf.size());
+    // Print method implementation for std::string
+    uint32_t SerialPrinter::print(std::unique_ptr<std::string> message) {
+        // if (message.empty()) {
+        //     DEBUGV("[c%d][%llu][ERROR] SerialPrinter::print - null message pointer\n", rp2040.cpuid(), elapsed());
+        //     return PICO_ERROR_INVALID_DATA;
+        // }
+        // Create and run handler using factory method
+        PrintHandler::create(m_ctx, std::move(message));
+        return PICO_OK; // Return success code
 
-        // Create handler using factory method
-        const auto handler = PrintHandler::create(m_ctx, std::move(buf));
-
-        // Take ownership and schedule for immediate execution
-        DEBUGV("[c%d][%llu][INFO] SerialPrinter::print - handler %p created successfully\n",
-            rp2040.cpuid(), time_us_64(), handler);
-
-        // Schedule the print handler to run immediately
-            handler->run(7);
-            return PICO_OK; // Return success code
     }
 
 } // namespace e5

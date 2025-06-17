@@ -1,43 +1,50 @@
 /**
-* @file SerialPrinter.hpp
+ * @file SerialPrinter.hpp
  * @brief Asynchronous serial printing utility
  *
- * This class provides asynchronous printing capabilities using the async context
- * to ensure proper core affinity for serial operations.
+ * This file defines the SerialPrinter class which provides asynchronous
+ * printing capabilities using the async context for proper core affinity.
  */
 
 #pragma once
-
-#include <atomic>
-#include <memory>
+#include <string>
 #include "ContextManager.hpp"
 
 namespace e5 {
 
-    class SerialPrinter {
+    using AsyncTcp::ContextManagerPtr;
+
+    /**
+     * @class SerialPrinter
+     * @brief Provides asynchronous serial printing capabilities
+     *
+     * This class allows printing to the serial port from any core or interrupt context
+     * by scheduling the actual printing operation on the appropriate core through
+     * the async context.
+     */
+    class SerialPrinter
+    {
+
+        const ContextManagerPtr& m_ctx; ///< Context manager for scheduling print operations
+
     public:
         /**
-         * @brief Constructs a SerialPrinter instance
-         * @param ctx The context manager to use for scheduling print operations
+         * @brief Constructs a SerialPrinter with the specified context manager
+         *
+         * @param ctx Shared context manager for synchronized execution
          */
-        explicit SerialPrinter(const AsyncTcp::ContextManagerPtr& ctx);
+        explicit SerialPrinter(const ContextManagerPtr& ctx);
 
         /**
-         * @brief Prints a message asynchronously
+         * @brief Prints a std::string to the serial port asynchronously
          *
-         * This method creates a PrintHandler to process the message and schedules it
-         * for immediate execution on the appropriate core.
+         * This method schedules the printing operation to run on the core where
+         * the context manager was initialized, ensuring thread safety.
          *
-         * @param message The message to print
-         * @return PICO_OK on success, or an error code on failure
+         * @param message std::string to print
+         * @return PICO_OK on success, or error code on failure
          */
-        uint32_t print(const char* message);
-
-    private:
-        const AsyncTcp::ContextManagerPtr& m_ctx; // Context manager for scheduling
-
-        std::atomic<bool> busy = false;
-
+        uint32_t print(std::unique_ptr<std::string> message);
     };
 
 } // namespace e5

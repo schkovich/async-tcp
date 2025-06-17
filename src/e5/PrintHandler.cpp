@@ -20,6 +20,10 @@
 #include "Arduino.h"
 
 namespace e5 {
+    int64_t elapsed();
+}
+
+namespace e5 {
 
     /**
      * @brief Handles the print operation.
@@ -38,18 +42,11 @@ namespace e5 {
      * ensuring proper core affinity for non-thread-safe operations like printing.
      */
     void PrintHandler::onWork() {
-
-        DEBUGV("[c%d][%llu][INFO] PrintHandler::onWork - message size: %d\n", rp2040.cpuid(), time_us_64(),
-               m_message.size());
-
         // Print the message if it's not empty
-        if (m_message.get()) {
-            Serial.print(m_message.get());
+        if (m_message.get()->length() > 0) {
+            Serial.printf("%s", m_message.get()->c_str());
+            m_message.reset(); // Remove the message from the buffer
         }
-
-        // Add debug confirmation that task removal was requested
-        DEBUGV("[c%d][%llu][INFO] PrintHandler::onWork - task removal requested for: %p\n", rp2040.cpuid(),
-               time_us_64(), this);
     }
 
     /**
@@ -59,7 +56,6 @@ namespace e5 {
      * @param worker
      * @param message Message to print
      */
-    PrintHandler::PrintHandler(const ContextManagerPtr& ctx, EphemeralWorker worker, MessageBuffer message) :
+    PrintHandler::PrintHandler(const ContextManagerPtr& ctx, EphemeralWorker worker, std::unique_ptr<std::string> message) :
         EventBridge(ctx, std::move(worker)), m_message(std::move(message)) {}
-
 } // namespace e5

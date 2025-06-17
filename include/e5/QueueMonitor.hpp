@@ -25,6 +25,14 @@ namespace e5 {
      */
     class QueueMonitor
     {
+        absolute_time_t m_last_sample_time = 0; /**< Last time a sample was taken */
+        absolute_time_t m_sampling_interval_us = 10000000; /**< Sampling interval in microseconds */
+        int m_warning_threshold; /**< Queue size that triggers a warning indication */
+        int m_critical_threshold; /**< Queue size that triggers a critical indication */
+        std::atomic<int> m_queue_size; /**< Current queue size */
+        std::atomic<int> m_max_queue_size; /**< Maximum queue size observed */
+        bool enabled = false; /**< Flag to disable queue monitoring */
+
     public:
         /**
          * @brief Constructs a QueueMonitor instance
@@ -195,9 +203,9 @@ namespace e5 {
          */
         bool shouldSample() {
             if (enabled) {
-                absolute_time_t current_time = get_absolute_time();
                 // Use the Pico SDK function to compare timestamps in microseconds
-                if (absolute_time_diff_us(m_last_sample_time, current_time) >= m_sampling_interval_us) {
+                if (const absolute_time_t current_time = get_absolute_time();
+                    absolute_time_diff_us(m_last_sample_time, current_time) >= m_sampling_interval_us) {
                     m_last_sample_time = current_time;
                     return true;
                 }
@@ -208,14 +216,7 @@ namespace e5 {
 
         void enable() { enabled = true; } /**< Enables queue monitoring */
 
-    private:
-        absolute_time_t m_last_sample_time = 0; /**< Last time a sample was taken */
-        absolute_time_t m_sampling_interval_us = 1000000; /**< Sampling interval in microseconds */
-        int m_warning_threshold; /**< Queue size that triggers a warning indication */
-        int m_critical_threshold; /**< Queue size that triggers a critical indication */
-        std::atomic<int> m_queue_size; /**< Current queue size */
-        std::atomic<int> m_max_queue_size; /**< Maximum queue size observed */
-        bool enabled = false; /**< Flag to disable queue monitoring */
+        void disable() { enabled = false; }
     };
 
 } // namespace e5

@@ -34,7 +34,6 @@ using namespace AsyncTcp;
  * QuoteBuffer buffer(ctx);
  * buffer.set("Hello, World!");
  * std::string content = buffer.get();
- * buffer.clear();
  * ```
  */
 class QuoteBuffer final : public SyncBridge {
@@ -56,7 +55,7 @@ class QuoteBuffer final : public SyncBridge {
         };
 
         Operation op;                ///< The operation to perform
-        std::string data{};            ///< Data for SET and APPEND operations
+        std::string data{};          ///< Data for SET operation
         std::string* result_ptr;     ///< Pointer to store the result for GET operation
 
         BufferPayload() : op(SET), result_ptr(nullptr) {}
@@ -70,7 +69,7 @@ class QuoteBuffer final : public SyncBridge {
      * the ContextManager was initialized, providing thread safety.
      *
      * @param payload Buffer operation instruction
-     * @return PICO_OK on success, or 1 if buffer is empty, 0 if not empty (for EMPTY operation)
+     * @return PICO_OK on success, or error code on failure
      */
     uint32_t onExecute(SyncPayloadPtr payload) override;
 
@@ -83,7 +82,7 @@ public:
     explicit QuoteBuffer(const ContextManagerPtr& ctx);
 
     /**
-     * @brief Sets the buffer content
+     * @brief Sets the buffer content from a std::string
      *
      * This method replaces the current buffer content with the provided string.
      * Thread-safe through SyncBridge integration, can be called from any core
@@ -91,7 +90,7 @@ public:
      *
      * @param data String to set as the buffer content
      */
-    void set(const std::string& data);
+    void set(std::string data);
 
     /**
      * @brief Gets the buffer content

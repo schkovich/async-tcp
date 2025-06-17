@@ -17,8 +17,8 @@
 
 #pragma once
 
+#include <string>
 #include "EventBridge.hpp"
-#include "MessageBuffer.hpp"
 
 namespace e5 {
 
@@ -37,11 +37,9 @@ namespace e5 {
      */
     class PrintHandler final : public EventBridge {
 
-        MessageBuffer m_message;            /**< Message buffer containing the text to print */
-        // Use the type alias from TaskTypes.hpp
-        [[nodiscard]] LedDebugger::CombinedState getHandlerState() const override { return LedDebugger::MIDDLE_oRYoo; }
-
+        std::unique_ptr<std::string> m_message = nullptr;            /**< Message buffer containing the text to print */
     protected:
+
         /**
          * @brief Handles the print operation.
          *
@@ -57,32 +55,30 @@ namespace e5 {
     public:
 
         /**
-         * @brief Static factory method that creates a PrintHandler with self-ownership
-         *
-         * Creates a PrintHandler instance, sets up self-ownership, and returns a pointer
-         * to the instance. The instance will clean itself up after execution.
-         *
-         * @param ctx The context manager to use for scheduling
-         * @param buffer The message buffer to print
-         * @return A pointer to the created PrintHandler
-         */
-        static PrintHandler* create(const ContextManagerPtr& ctx, MessageBuffer buffer) {
-            auto handler = std::make_unique<PrintHandler>(ctx, EphemeralWorker(), std::move(buffer));
-            PrintHandler* raw_ptr = handler.get();
-            raw_ptr->takeOwnership(std::move(handler));
-            return raw_ptr;
-        }
-
-        /**
          * @brief Constructs a PrintHandler.
          *
          * @param ctx Shared pointer to the context manager that will execute this handler
          * @param worker Ephemeral worker instance for immediate execution
          * @param message Message buffer containing the text to print
          */
-        explicit PrintHandler(const ContextManagerPtr& ctx, EphemeralWorker worker, MessageBuffer message);
+        explicit PrintHandler(const ContextManagerPtr& ctx, EphemeralWorker worker, std::unique_ptr<std::string> message);
 
-        // Return the type alias
+        /**
+         * @brief Static factory method that creates a PrintHandler with self-ownership
+         *
+         * Creates a PrintHandler instance, sets up self-ownership, and returns a pointer
+         * to the instance. The instance will clean itself up after execution.
+         *
+         * @param ctx The context manager to use for scheduling
+         * @param message The message buffer to print
+         * @return A pointer to the created PrintHandler
+         */
+        static void create(const ContextManagerPtr& ctx, std::unique_ptr<std::string> message) {
+            auto handler = std::make_unique<PrintHandler>(ctx, EphemeralWorker(), std::move(message));
+            PrintHandler* raw_ptr = handler.get();
+            raw_ptr->takeOwnership(std::move(handler));
+            raw_ptr->run(0);
+        }
     };
 
 }

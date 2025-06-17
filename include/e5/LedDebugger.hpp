@@ -42,7 +42,7 @@ class LedDebugger {
     static constexpr int BLUE_LED = D7;
     static constexpr int RED_LED = D8;
     static constexpr int YELLOW_LED = D9;
-    static constexpr int GREEN_LED = D10; // or whichever pin is correct
+    static constexpr int GREEN_LED = D10;
 
     // Debug state codes (5-bit values) with pattern-based naming
     enum DebugZone : uint8_t {

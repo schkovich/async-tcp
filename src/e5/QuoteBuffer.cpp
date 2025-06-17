@@ -11,8 +11,11 @@
  */
 
 #include "e5/QuoteBuffer.hpp"
-
 #include "e5/LedDebugger.hpp"
+
+namespace e5 {
+    int64_t elapsed();
+}
 
 namespace e5 {
 
@@ -21,7 +24,10 @@ namespace e5 {
      *
      * @param ctx Shared context manager for synchronized execution
      */
-    QuoteBuffer::QuoteBuffer(const ContextManagerPtr& ctx) : SyncBridge(ctx) {}
+    QuoteBuffer::QuoteBuffer(const ContextManagerPtr& ctx) : SyncBridge(ctx) {
+        // Initialize with an empty string to ensure it's properly null-terminated
+        m_buffer.clear();
+    }
 
     /**
      * @brief Executes buffer operations in a thread-safe manner
@@ -31,32 +37,22 @@ namespace e5 {
      * the ContextManager was initialized, providing thread safety.
      *
      * @param payload Buffer operation instruction
-     * @return PICO_OK on success, or 1 if buffer is empty, 0 if not empty (for EMPTY operation)
+     * @return PICO_OK on success, or error code on failure
      */
     uint32_t QuoteBuffer::onExecute(const SyncPayloadPtr payload) {
 
-            switch (auto* buffer_payload = static_cast<BufferPayload*>(payload.get()); buffer_payload->op) {
+            switch (const auto* buffer_payload = static_cast<BufferPayload*>(payload.get()); buffer_payload->op) {
             case BufferPayload::SET:
-                DEBUGV("[c%d][%llu][INFO] QuoteBuffer::onExecute - SET\n", rp2040.cpuid(), time_us_64());
-                if (m_buffer.empty()) {
-                    m_buffer = std::move(buffer_payload->data);
+                m_buffer = buffer_payload->data;
+                return PICO_OK;
+
+            default:
+                if (buffer_payload->result_ptr) {
+                    *buffer_payload->result_ptr = m_buffer;
                     return PICO_OK;
                 }
-                return -1; // Return -1 if buffer is not empty
-
-            case BufferPayload::GET:
-                DEBUGV("[c%d][%llu][INFO] QuoteBuffer::onExecute - GET\n", rp2040.cpuid(), time_us_64());
-                if (!m_buffer.empty()) {
-                    if (buffer_payload->result_ptr) {
-                        *buffer_payload->result_ptr = m_buffer;
-                        return PICO_OK;
-                    }
-                    return -2; // Return -2 if there was no result pointer
-                }
-                return PICO_OK; // Return PICO_OK if buffer is empty
+                return PICO_ERROR_NO_DATA;
             }
-
-            return PICO_OK;
     }
 
     /**
@@ -68,16 +64,21 @@ namespace e5 {
      *
      * @param data String to set as the buffer content
      */
-    void QuoteBuffer::set(const std::string& data) {
+    void QuoteBuffer::set(const std::string data) { // NOLINT
         if (bool expected = false; busy_guard.compare_exchange_strong(expected, true)) {
-            auto payload = std::make_unique<BufferPayload>();
-            payload->op = BufferPayload::SET;
-            payload->data = data;
-            execute(std::move(payload));
+            if (!data.empty()) {
+                auto payload = std::make_unique<BufferPayload>();
+                payload->op = BufferPayload::SET;
+                payload->data = data;
+                if (const auto result = execute(std::move(payload)); result != PICO_OK) {
+                    DEBUGV("[c%d][%llu][ERROR] QuoteBuffer::set() returned error %d.\n",
+                           rp2040.cpuid(), elapsed(), result);
+                }
+            } else {
+                DEBUGV("[c%d][%llu][WARNING] QuoteBuffer::set() - empty string given.\n", rp2040.cpuid(),
+                       elapsed());
+            }
             busy_guard = false;
-        } else {
-            DEBUGV("[c%d][%llu][INFO] QuoteBuffer::set() - LOCKED\n",
-                rp2040.cpuid(), time_us_64());
         }
     }
 
@@ -90,21 +91,24 @@ namespace e5 {
      *
      * @return Copy of the current buffer content
      */
-    std::string QuoteBuffer::get() {
+    std::string QuoteBuffer::get() { // NOLINT
 
+        std::string result_string{""};
         if (bool expected = false; busy_guard.compare_exchange_strong(expected, true)) {
-            // lockBridge();
-            std::string result;
             auto payload = std::make_unique<BufferPayload>();
             payload->op = BufferPayload::GET;
-            payload->result_ptr = &result;
-            execute(std::move(payload));
-            // unlockBridge();
-            busy_guard = false;
-            return result;
-        }
+            payload->result_ptr = &result_string;
 
-        return std::string{}; // Return empty string if busy
+            if (const auto result = execute(std::move(payload)); result != PICO_OK) {
+                DEBUGV("[c%d][%llu][ERROR] QuoteBuffer::get() returned error %d.\n", rp2040.cpuid(), elapsed(), result);
+                busy_guard = false;
+                return result_string;
+            }
+
+            busy_guard = false;
+            return result_string;
+        }
+        return result_string;
     }
 
 } // namespace e5

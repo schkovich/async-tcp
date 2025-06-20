@@ -51,7 +51,7 @@ namespace AsyncTcp {
 
     class AsyncTcpClientContext;
 
-    class WiFiServer; // Is it needed and used?
+    class WiFiServer; // Is it necessary and used?
 
     using namespace std::placeholders;
 

@@ -26,9 +26,9 @@
 #include "../include/e5/QotdConnectedHandler.hpp"
 #include "../include/e5/QotdReceivedHandler.hpp"
 #include "../include/e5/QuoteBuffer.hpp"
-#include "AsyncTcpClient.hpp"
-#include "ContextManager.hpp"
-#include "SerialPrinter.hpp"
+#include "../include/e5/SerialPrinter.hpp"
+#include "../include/AsyncTcpClient.hpp"
+#include "../include/ContextManager.hpp"
 #include "secrets.h" // Contains STASSID, STAPSK, QOTD_HOST, ECHO_HOST, QOTD_PORT, ECHO_PORT
 
 /**
@@ -47,21 +47,21 @@ volatile bool ctx1_ready = false;   // For loop() to wait for setup1()
 
 
 // WiFi credentials from secrets.h
-const auto *ssid = STASSID;
-const auto *password = STAPSK;
+const auto* ssid = STASSID;
+const auto* password = STAPSK;
 WiFiMulti multi;
 
 // Server details
-const auto *qotd_host = QOTD_HOST;
-const auto *echo_host = ECHO_HOST;
-constexpr uint16_t qotd_port = QOTD_PORT;  // QOTD service port
-constexpr uint16_t echo_port = ECHO_PORT;  // Echo service port
+const auto* qotd_host = QOTD_HOST;
+const auto* echo_host = ECHO_HOST;
+constexpr uint16_t qotd_port = QOTD_PORT; // QOTD service port
+constexpr uint16_t echo_port = ECHO_PORT; // Echo service port
 
 // TCP clients
 AsyncTcp::AsyncTcpClient qotd_client;
 AsyncTcp::AsyncTcpClient echo_client;
 
-// IP addresses (resolved once at startup)
+// IP addresses
 IPAddress qotd_ip_address;
 IPAddress echo_ip_address;
 
@@ -76,21 +76,24 @@ constexpr long yellow_interval = 3333;  // Interval for echo requests (milliseco
 constexpr long blue_interval = 11111; // Interval for heap stats (milliseconds)
 
 // Global asynchronous context managers for each core
-auto ctx0 = std::make_unique<AsyncTcp::ContextManager>();  // Core 0
-auto ctx1 = std::make_unique<AsyncTcp::ContextManager>(); // Core 1
+async_context_threadsafe_background_t background_ctx0;
+async_context_threadsafe_background_t background_ctx1;
+auto ctx0 = std::make_unique<AsyncTcp::ContextManager>(background_ctx0); // Core 0
+auto ctx1 = std::make_unique<AsyncTcp::ContextManager>(background_ctx1); // Core 1
 
 // Thread-safe buffer for storing the quote
 e5::QuoteBuffer qotd_buffer(ctx0);
 
 constexpr int MAX_QOTD_SIZE = 512;
 
+// Set up the SerialPrinter for Core 1
+e5::SerialPrinter serial_printer(ctx1);
+
 /**
  * @brief Connects to the "quote of the day" server and initiates a connection.
- *
- * This function attempts to connect to the server using the pre-resolved IP address.
  */
 void get_quote_of_the_day() {
-    if (0 == qotd_client.connect(qotd_ip_address, qotd_port)) {
+    if (!qotd_client.connect(qotd_ip_address, qotd_port)) {
         DEBUGV("Failed to connect to QOTD server.\n");
     }
 }
@@ -130,25 +133,26 @@ extern "C" void print_heap_stats(AsyncTcp::ContextManagerPtr& ctx) {
     const int totalHeap = rp2040.getTotalHeap();
 
     // Format the string with stats
-    char print_me[64];
-    const auto print_me_length =
-            snprintf(print_me, sizeof(print_me), "Free: %d, Used: %d, Total: %d", freeHeap, usedHeap, totalHeap);
-    (void) print_me_length;
+    auto heap_stats = std::make_unique<std::string>("Free: ");
+    heap_stats->append(std::to_string(freeHeap));
+    heap_stats->append(", Used: ");
+    heap_stats->append(std::to_string(usedHeap));
+    heap_stats->append(", Total: ");
+    heap_stats->append(std::to_string(totalHeap));
+    heap_stats->append("\n");
 
-    e5::SerialPrinter serial_printer(ctx);
-    serial_printer.print(print_me);
+    serial_printer.print(std::move(heap_stats));
 }
 
 /**
  * @brief Initializes the Wi-Fi connection and asynchronous context on Core 0.
  */
 [[maybe_unused]] void setup() {
-    Serial.begin(115200);
-    while(!Serial) {
+    Serial1.begin(115200);
+    while(!Serial1) {
         delay(10);
     }
     delay(5000);
-    DEBUGV("C0: Blue leader standing by...\n");
     RP2040::enableDoubleResetBootloader();
 
     // Connect to Wi-Fi network
@@ -161,20 +165,17 @@ extern "C" void print_heap_stats(AsyncTcp::ContextManagerPtr& ctx) {
         rp2040.reboot();
     }
 
-    Serial.println("Wi-Fi connected");
+    Serial1.println("Wi-Fi connected");
 
     // Resolve host names to IP addresses once at startup
     hostByName(qotd_host, qotd_ip_address, 2000);
     hostByName(echo_host, echo_ip_address, 2000);
 
     // Initialize context on Core 0
-    if (!ctx0->initDefaultContext()) {
-        DEBUGV("ctx0 init failed on the Core 0\n");
-    }
-    DEBUGV("Core %d\n", ctx0->getCore());
 
-    // Set up event handlers
-    e5::SerialPrinter serial_printer(ctx1);
+    if (auto config = async_context_threadsafe_background_default_config(); !ctx0->initDefaultContext(config)) {
+        panic_compact("CTX init failed on Core 0\n");
+    }
 
     // Echo client handlers
     auto echo_connected_handler = std::make_unique<e5::EchoConnectedHandler>(ctx0, echo_client, serial_printer);
@@ -198,15 +199,12 @@ extern "C" void print_heap_stats(AsyncTcp::ContextManagerPtr& ctx) {
  */
 [[maybe_unused]] void setup1() {
     while (!operational) {
-        delay(10);
+        tight_loop_contents();
     }
 
-    DEBUGV("C1: Red leader standing by...\n");
-
-    if (!ctx1->initDefaultContext()) {
-        DEBUGV("CTX init failed on Core 1\n");
+    if (auto config = async_context_threadsafe_background_default_config(); !ctx1->initDefaultContext(config)) {
+        panic_compact("CTX init failed on Core 1\n");
     }
-    DEBUGV("Core %d\n", ctx1->getCore());
     ctx1_ready = true;
 }
 
@@ -244,8 +242,8 @@ extern "C" void print_heap_stats(AsyncTcp::ContextManagerPtr& ctx) {
 
 /**
  * @brief Loop function for Core 1.
- * Currently empty as all work is handled through the async context.
+ * Currently empties as all work is handled through the async context.
  */
 [[maybe_unused]] void loop1() {
-    // Core 1 work is handled through the async context
+        tight_loop_contents();
 }

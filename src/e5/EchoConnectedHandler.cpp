@@ -39,18 +39,10 @@ void EchoConnectedHandler::onWork() {
 
     // Get the local IP address
     const auto ip = m_io.localIP().toString().c_str();
-
-    // Format and print the connection message
-    constexpr auto size = sizeof(ip);
-    char buffer[size];
-    const auto length = snprintf(buffer, size, "Echo client connected. Local IP: %s\n", ip);
-    (void) length;  // Suppress unused variable warning
-
-    DEBUGV("[c%d][%llu][INFO] EchoConnectedHandler::onWork - message: %s\n",
-        rp2040.cpuid(), time_us_64(), buffer);
+    auto local_ip = std::make_unique<std::string>("Echo client connected. Local IP: " + std::string(ip));
 
     // Print the message using the thread-safe SerialPrinter
-    m_serial_printer.print(buffer);
+    m_serial_printer.print(std::move(local_ip));
 }
 
 }

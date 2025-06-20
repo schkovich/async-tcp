@@ -39,15 +39,8 @@ namespace e5 {
 
         // Get the local IP address
         const auto ip = m_io.localIP().toString().c_str();
-
-        // Format and print the connection message
-        constexpr auto size = sizeof(ip);
-        char buffer[size];
-        const auto length = snprintf(buffer, size, "Qotd client connected. Local IP: %s\n", ip);
-        (void) length;  // Suppress unused variable warning
-
-        // Print the message using the thread-safe SerialPrinter
-        m_serial_printer.print(buffer);
+        auto local_ip = std::make_unique<std::string>("QOTD client connected. Local IP: " + std::string(ip));
+        m_serial_printer.print(std::move(local_ip));
     }
 
 } // namespace e5

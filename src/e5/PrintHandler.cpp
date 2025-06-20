@@ -20,10 +20,6 @@
 #include "Arduino.h"
 
 namespace e5 {
-    int64_t elapsed();
-}
-
-namespace e5 {
 
     /**
      * @brief Handles the print operation.
@@ -42,10 +38,9 @@ namespace e5 {
      * ensuring proper core affinity for non-thread-safe operations like printing.
      */
     void PrintHandler::onWork() {
-        // Print the message if it's not empty
-        if (m_message.get()->length() > 0) {
-            Serial.printf("%s", m_message.get()->c_str());
-            m_message.reset(); // Remove the message from the buffer
+        if (!m_message->empty()) {
+            Serial1.printf("%s", m_message->c_str());
+            m_message.reset();
         }
     }
 

@@ -106,7 +106,7 @@ namespace AsyncTcp {
     void EventBridge::run(const uint32_t run_in) { // NOLINT
         if (const auto result = m_ctx->addEphemeralWorker(m_ephemeral_worker, run_in); false == result) {
             DEBUGV("[c%d][%llu][ERROR] EventBridge::run - Failed to add ephemeral worker: %p, error: %lu\n",
-                rp2040.cpuid(), from_us_since_boot(), this, result);
+                rp2040.cpuid(), time_us_64(), this, result);
         }
     }
 
@@ -166,7 +166,7 @@ namespace AsyncTcp {
             static_cast<EventBridge*>(worker->user_data)->doWork();
         } else {
             DEBUGV("[AC-%d][%llu][ERROR] SyncBridge::worker_bridging_function - invalid worker or user data\n",
-                rp2040.cpuid(), from_us_since_boot());
+                rp2040.cpuid(), time_us_64());
         }
     }
 
@@ -203,7 +203,7 @@ namespace AsyncTcp {
             pBridge->releaseOwnership();
         } else {
             DEBUGV("\033[1;31m[AC-%d][%llu][ERROR] EventBridge::ephemeral_bridging_function - invalid worker or user data\033[1;37m\n",
-                rp2040.cpuid(), from_us_since_boot());
+                rp2040.cpuid(), time_us_64());
         }
         digitalWrite(LED_BUILTIN, LOW);
     }

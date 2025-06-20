@@ -11,9 +11,6 @@
 #include "ContextManager.hpp"
 #include "e5/MessageBuffer.hpp"
 #include "e5/PrintHandler.hpp"
-namespace e5 {
-    int64_t elapsed();
-}
 
 namespace e5 {
 

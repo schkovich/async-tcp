@@ -14,10 +14,6 @@
 #include "e5/LedDebugger.hpp"
 
 namespace e5 {
-    int64_t elapsed();
-}
-
-namespace e5 {
 
     /**
      * @brief Constructs a QuoteBuffer with the specified context manager
@@ -72,11 +68,11 @@ namespace e5 {
                 payload->data = data;
                 if (const auto result = execute(std::move(payload)); result != PICO_OK) {
                     DEBUGV("[c%d][%llu][ERROR] QuoteBuffer::set() returned error %d.\n",
-                           rp2040.cpuid(), elapsed(), result);
+                           rp2040.cpuid(), time_us_64(), result);
                 }
             } else {
                 DEBUGV("[c%d][%llu][WARNING] QuoteBuffer::set() - empty string given.\n", rp2040.cpuid(),
-                       elapsed());
+                       time_us_64());
             }
             busy_guard = false;
         }
@@ -100,7 +96,7 @@ namespace e5 {
             payload->result_ptr = &result_string;
 
             if (const auto result = execute(std::move(payload)); result != PICO_OK) {
-                DEBUGV("[c%d][%llu][ERROR] QuoteBuffer::get() returned error %d.\n", rp2040.cpuid(), elapsed(), result);
+                DEBUGV("[c%d][%llu][ERROR] QuoteBuffer::get() returned error %d.\n", rp2040.cpuid(), time_us_64(), result);
                 busy_guard = false;
                 return result_string;
             }

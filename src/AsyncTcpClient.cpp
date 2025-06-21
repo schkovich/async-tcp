@@ -38,7 +38,7 @@ namespace AsyncTcp {
     uint16_t AsyncTcpClient::_localPort = 0;
 
     static bool defaultNoDelay = true; // false == Nagle enabled by default
-    static bool defaultSync = false;
+    static bool defaultSync = false; // @todo: clarify if this is used
 
     [[maybe_unused]] void AsyncTcpClient::setDefaultNoDelay(const bool noDelay) {
         defaultNoDelay = noDelay;
@@ -85,7 +85,7 @@ namespace AsyncTcp {
     AsyncTcpClient::AsyncTcpClient(const AsyncTcpClient &other) : Client(other), SList(other) {
         _ctx = other._ctx;
         _timeout = other._timeout;
-        _localPort = AsyncTcpClient::_localPort;
+        _localPort = localPort();
         _owned = other._owned;
         if (_ctx) {
             _ctx->ref();
@@ -112,7 +112,7 @@ namespace AsyncTcp {
 
         // Copy other members
         _timeout = other._timeout;
-        _localPort = AsyncTcpClient::_localPort;  // Seems like this is a static member?
+        _localPort = localPort();
         _owned = other._owned;
 
         return *this;
@@ -138,7 +138,7 @@ namespace AsyncTcp {
 
         tcp_pcb *pcb = tcp_new();
         if (!pcb) {
-            Serial.println("No PCB");
+            DEBUGWIRE("No PCB\n");
             return 0;
         }
 
@@ -157,9 +157,8 @@ namespace AsyncTcp {
         _ctx->setOnAckCallback([this](auto &&PH1, auto &&PH2) {
             _onAckCallback(std::forward<decltype(PH1)>(PH1), std::forward<decltype(PH2)>(PH2));
         });
-        int res = _ctx->connect(ip, port);
-        if (res == 0) {
-            Serial.println("Client did not menage to connect.");
+        if (const int res = _ctx->connect(ip, port); res == 0) {
+            DEBUGWIRE("Client did not menage to connect.\n");
             _ctx->unref();
             _ctx = nullptr;
             return 0;
@@ -424,13 +423,13 @@ namespace AsyncTcp {
     void AsyncTcpClient::_onConnectCallback() const {
         const AIPAddress remote_ip = remoteIP();
         (void) remote_ip;
-        DEBUGV("AsyncTcpClient::_onConnectCallback(): Connected to %s.\n", remote_ip.toString().c_str());
+        DEBUGWIRE("AsyncTcpClient::_onConnectCallback(): Connected to %s.\n", remote_ip.toString().c_str());
         if (_connected_callback_handler) {
             _connected_callback_handler->handleEvent();
         } else if (_connected_callback_worker) {
             _connected_callback_worker->run();
         } else {
-            DEBUGV("AsyncTcpClient::_onConnectCallback: No event handler\n");
+            DEBUGWIRE("AsyncTcpClient::_onConnectCallback: No event handler\n");
         }
     }
 
@@ -438,7 +437,7 @@ namespace AsyncTcp {
         if (_error_callback_handler) {
             _error_callback_handler->handleEvent();
         }
-        DEBUGV("The ctx failed with the error code: %d", err);
+        DEBUGWIRE("The ctx failed with the error code: %d", err);
         _ctx->close();
         _ctx = nullptr;
     }
@@ -449,14 +448,14 @@ namespace AsyncTcp {
         } else if (_received_callback_worker) {
             _received_callback_worker->run();
         } else {
-            DEBUGV("AsyncTcpClient::_onReceiveCallback: No event handler\n");
+            DEBUGWIRE("AsyncTcpClient::_onReceiveCallback: No event handler\n");
         }
     }
 
     void AsyncTcpClient::_onAckCallback(struct tcp_pcb *tpcb, uint16_t len) const {
         (void) tpcb;
         (void) len;
-        DEBUGV("AsyncTcpClient::_onAckCallback: ack callback triggered.length: %d\n", len);
+        DEBUGWIRE("AsyncTcpClient::_onAckCallback: ack callback triggered.length: %d\n", len);
         // @todo: implement later
     }
 } // namespace AsyncTcp

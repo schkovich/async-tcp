@@ -57,7 +57,7 @@ class AsyncTcpClientContext {
 
     err_t abort() {
         if (_pcb) {
-            DEBUGV(":abort\n");
+            DEBUGWIRE(":abort\n");
             tcp_arg(_pcb, nullptr);
             tcp_sent(_pcb, nullptr);
             tcp_recv(_pcb, nullptr);
@@ -72,7 +72,7 @@ class AsyncTcpClientContext {
     err_t close() {
         err_t err = ERR_OK;
         if (_pcb) {
-            DEBUGV(":close\n");
+            DEBUGWIRE(":close\n");
             tcp_arg(_pcb, nullptr);
             tcp_sent(_pcb, nullptr);
             tcp_recv(_pcb, nullptr);
@@ -80,7 +80,7 @@ class AsyncTcpClientContext {
             tcp_poll(_pcb, nullptr, 0);
             err = tcp_close(_pcb);
             if (err != ERR_OK) {
-                DEBUGV(":tc err %d\n", static_cast<int>(err));
+                DEBUGWIRE(":tc err %d\n", static_cast<int>(err));
                 tcp_abort(_pcb);
                 err = ERR_ABRT;
             }
@@ -100,18 +100,18 @@ class AsyncTcpClientContext {
 
     void ref() {
         ++_ref_cnt;
-        DEBUGV(":ref %d\n", _ref_cnt);
+        DEBUGWIRE(":ref %d\n", _ref_cnt);
     }
 
     void unref() {
-        DEBUGV(":ur %d\n", _ref_cnt);
+        DEBUGWIRE(":ur %d\n", _ref_cnt);
         if (--_ref_cnt == 0) {
             discard_received();
             close();
             if (_discard_cb) {
                 _discard_cb(_discard_cb_arg, this);
             }
-            DEBUGV(":del\n");
+            DEBUGWIRE(":del\n");
             delete this;
         }
     }
@@ -130,15 +130,13 @@ class AsyncTcpClientContext {
         err_t err =
             tcp_connect(_pcb, addr, port, &AsyncTcpClientContext::_s_connected);
         if (err != ERR_OK) {
-            Serial.println("LWIP tcp_connect failed.");
-            Serial.print(err);
-            Serial.println("");
+            DEBUGWIRE(":connect err %d\n", static_cast<int>(err));
             return 0;
         }
 
         if (!_pcb) {
-            DEBUGV(":cabrt\n");
-            Serial.println("No PCB here,");
+            DEBUGWIRE(":cabrt\n");
+            return 0;
             return 0;
         }
         return 1;
@@ -259,7 +257,7 @@ class AsyncTcpClientContext {
      */
     size_t read(char *dst, size_t size) {
         if (!dst || size == 0) {
-            DEBUGV(":read invalid parameters\n");
+            DEBUGWIRE(":read invalid parameters\n");
             return 0;
         }
 
@@ -268,15 +266,14 @@ class AsyncTcpClientContext {
         // Limit size to available data
         size = std::min(size, max_size);
 
-        DEBUGV(":rd %d, %d, %d\n", size, _rx_buf->tot_len, _rx_buf_offset);
+        DEBUGWIRE(":rd %d, %d, %d\n", size, _rx_buf->tot_len, _rx_buf_offset);
         size_t size_read = 0;
 
         // Keep reading from the buffer while there's data to read
         while (size > 0) {
             // Use peekBytes to copy data into the destination buffer
-            size_t copy_size = peekBytes(dst, size);
+            const size_t copy_size = peekBytes(dst, size);
             if (copy_size == 0) {
-                DEBUGV(":read no more data to copy\n");
                 break;
             }
             dst += copy_size;
@@ -326,10 +323,10 @@ class AsyncTcpClientContext {
         const size_t max_size = getSize();
         size = (size < max_size) ? size : max_size;
 
-        DEBUGV(":pd %d, %d, %d\n", size, _rx_buf->tot_len, _rx_buf_offset);
+        DEBUGWIRE(":pd %d, %d, %d\n", size, _rx_buf->tot_len, _rx_buf_offset);
         const size_t buf_size = peekAvailable();
         const size_t copy_size = (size < buf_size) ? size : buf_size;
-        DEBUGV(":rpi %d, %d\n", buf_size, copy_size);
+        DEBUGWIRE(":rpi %d, %d\n", buf_size, copy_size);
         memcpy(dst, static_cast<char *>(_rx_buf->payload) + _rx_buf_offset, copy_size);
         return copy_size;
     }
@@ -369,7 +366,7 @@ class AsyncTcpClientContext {
     void peekConsume(const size_t consume) { _consume(consume); }
 
     void discard_received() {
-        DEBUGV(":dsrcv %d\n", _rx_buf ? _rx_buf->tot_len : 0);
+        DEBUGWIRE(":dsrcv %d\n", _rx_buf ? _rx_buf->tot_len : 0);
         if (!_rx_buf) {
             return;
         }
@@ -398,10 +395,8 @@ class AsyncTcpClientContext {
         uint32_t last_sent = millis();
         while (true) {
             if (millis() - last_sent > static_cast<uint32_t>(max_wait_ms)) {
-#ifdef DEBUGV
                 // wait until sent: timeout
-                DEBUGV(":wustmo\n");
-#endif
+                DEBUGWIRE(":wustmo\n");
                 // All data was not flushed, timeout hit
                 return false;
             }
@@ -570,9 +565,9 @@ class AsyncTcpClientContext {
 
             if (written == dl || _is_timeout(op_start_time) || !_is_connection_valid()) {
                 if (_is_timeout(op_start_time)) {
-                    DEBUGV(":wtmo\n");
+                    DEBUGWIRE(":wtmo\n");
                 } else if (!_is_connection_valid()) {
-                    DEBUGV("Operation aborted ;)\n");
+                    DEBUGWIRE("Operation aborted ;)\n");
                 }
                 break;
             }
@@ -659,7 +654,7 @@ class AsyncTcpClientContext {
             return false;
         }
 
-        DEBUGV(":wr %d %d\n", data_len - *written, *written);
+        DEBUGWIRE(":wr %d %d\n", data_len - *written, *written);
 
         bool has_written = false;
         int scale = 0;
@@ -679,7 +674,7 @@ class AsyncTcpClientContext {
             const uint8_t flags = _get_write_flags(next_chunk_size, remaining);
             const err_t err = tcp_write(_pcb, &datasource[*written], next_chunk_size, flags);
 
-            DEBUGV(":wrc %d %d %d\n", next_chunk_size, remaining, static_cast<int>(err));
+            DEBUGWIRE(":wrc %d %d %d\n", next_chunk_size, remaining, static_cast<int>(err));
 
             if (err == ERR_OK) {
                 *written += next_chunk_size;
@@ -713,9 +708,7 @@ class AsyncTcpClientContext {
     err_t _acked(tcp_pcb *pcb, uint16_t len) {
         (void)pcb;
         (void)len;
-        DEBUGV(":ack %d\n", len);
-        //        Serial.print("ACK len: ");
-        //        Serial.println(len);
+        DEBUGWIRE(":ack %d\n", len);
         //        _write_some_from_cb();
         _written += len;
         //        tcp_recved(pcb, len);
@@ -728,13 +721,13 @@ class AsyncTcpClientContext {
         if (left > 0) {
             _rx_buf_offset += size;
         } else if (!_rx_buf->next) {
-            DEBUGV(":c0 %d, %d\n", size, _rx_buf->tot_len);
+            DEBUGWIRE(":c0 %d, %d\n", size, _rx_buf->tot_len);
             auto head = _rx_buf;
             _rx_buf = nullptr;
             _rx_buf_offset = 0;
             pbuf_free(head);
         } else {
-            DEBUGV(":c %d, %d, %d\n", size, _rx_buf->len, _rx_buf->tot_len);
+            DEBUGWIRE(":c %d, %d, %d\n", size, _rx_buf->len, _rx_buf->tot_len);
             auto head = _rx_buf;
             _rx_buf = _rx_buf->next;
             _rx_buf_offset = 0;
@@ -751,7 +744,7 @@ class AsyncTcpClientContext {
         (void)err;
         if (pb == nullptr) {
             // connection closed by peer
-            DEBUGV(":rcl pb=%p sz=%d\n", _rx_buf,
+            DEBUGWIRE(":rcl pb=%p sz=%d\n", _rx_buf,
                    _rx_buf ? _rx_buf->tot_len : -1);
             _notify_error();
             if (_rx_buf && _rx_buf->tot_len) {
@@ -762,16 +755,16 @@ class AsyncTcpClientContext {
                 // peer closed = nothing can be written:
                 // closing in the legacy way
                 // abort();
-                DEBUGV("_recv closing in the legacy way\n");
+                DEBUGWIRE("_recv closing in the legacy way\n");
                 // return ERR_ABRT;
             }
         }
 
         if (_rx_buf) {
-            DEBUGV(":rch %d, %d\n", _rx_buf->tot_len, pb->tot_len);
+            DEBUGWIRE(":rch %d, %d\n", _rx_buf->tot_len, pb->tot_len);
             pbuf_cat(_rx_buf, pb);
         } else {
-            DEBUGV(":rn %d\n", pb->tot_len);
+            DEBUGWIRE(":rn %d\n", pb->tot_len);
             _rx_buf = pb;
             _rx_buf_offset = 0;
         }
@@ -782,25 +775,21 @@ class AsyncTcpClientContext {
         return ERR_OK;
     }
 
-    void _error(err_t err) {
-        (void)err;
-        DEBUGV(":er %d 0x%%\n", static_cast<int>(err));
-        // Serial.print("Error: ");
-        // Serial.println(err);
+    void _error(const err_t err) {
+        DEBUGWIRE(":er %d 0x%%\n", static_cast<int>(err));
         tcp_arg(_pcb, nullptr);
         tcp_sent(_pcb, nullptr);
         tcp_recv(_pcb, nullptr);
         tcp_err(_pcb, nullptr);
-        _pcb = nullptr;
+        _pcb = nullptr;        (void)err;
+
         _errorCb(err);
         _notify_error();
     }
 
-    err_t _connected(struct tcp_pcb *pcb, err_t err) {
+    err_t _connected(const struct tcp_pcb *pcb, const err_t err) const {
         (void)err;
         (void)pcb;
-        DEBUGV("AsyncTcpClientContext::_connected - incoming pcb: %p, stored _pcb: %p\n", pcb, _pcb);
-        // sleep_ms(1000);
         assert(pcb == _pcb && "Inconsistent _pcb");
         _connectCb();
         return ERR_OK;

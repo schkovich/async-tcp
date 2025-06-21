@@ -38,11 +38,11 @@ void EchoConnectedHandler::onWork() {
     m_io.setNoDelay(false);  // Enable Nagle's algorithm for better bandwidth efficiency
 
     // Get the local IP address
-    const auto ip = m_io.localIP().toString().c_str();
-    auto local_ip = std::make_unique<std::string>("Echo client connected. Local IP: " + std::string(ip));
+    const std::string local_ip(m_io.localIP().toString().c_str());
+    auto notify_connect = std::make_unique<std::string>("Echo client connected. Local IP: "
+        + local_ip + "\n");
 
-    // Print the message using the thread-safe SerialPrinter
-    m_serial_printer.print(std::move(local_ip));
+    m_serial_printer.print(std::move(notify_connect));
 }
 
 }

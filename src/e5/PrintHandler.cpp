@@ -39,8 +39,7 @@ namespace e5 {
      */
     void PrintHandler::onWork() {
         if (!m_message->empty()) {
-            Serial1.printf("%s", m_message->c_str());
-            Serial1.flush();
+            Serial1.println(m_message->c_str());
             m_message.reset();
         }
     }

@@ -42,6 +42,10 @@ namespace e5 {
                 m_buffer = buffer_payload->data;
                 return PICO_OK;
 
+            case BufferPayload::APPEND:
+                m_buffer += buffer_payload->data;
+                return PICO_OK;
+
             default:
                 if (buffer_payload->result_ptr) {
                     *buffer_payload->result_ptr = m_buffer;
@@ -62,17 +66,12 @@ namespace e5 {
      */
     void QuoteBuffer::set(const std::string data) { // NOLINT
         if (bool expected = false; busy_guard.compare_exchange_strong(expected, true)) {
-            if (!data.empty()) {
-                auto payload = std::make_unique<BufferPayload>();
-                payload->op = BufferPayload::SET;
-                payload->data = data;
-                if (const auto result = execute(std::move(payload)); result != PICO_OK) {
-                    DEBUGV("[c%d][%llu][ERROR] QuoteBuffer::set() returned error %d.\n",
-                           rp2040.cpuid(), time_us_64(), result);
-                }
-            } else {
-                DEBUGV("[c%d][%llu][WARNING] QuoteBuffer::set() - empty string given.\n", rp2040.cpuid(),
-                       time_us_64());
+            auto payload = std::make_unique<BufferPayload>();
+            payload->op = BufferPayload::SET;
+            payload->data = data;
+            if (const auto result = execute(std::move(payload)); result != PICO_OK) {
+                DEBUGV("[c%d][%llu][ERROR] QuoteBuffer::set() returned error %d.\n",
+                       rp2040.cpuid(), time_us_64(), result);
             }
             busy_guard = false;
         }
@@ -89,7 +88,7 @@ namespace e5 {
      */
     std::string QuoteBuffer::get() { // NOLINT
 
-        std::string result_string{""};
+        std::string result_string;
         if (bool expected = false; busy_guard.compare_exchange_strong(expected, true)) {
             auto payload = std::make_unique<BufferPayload>();
             payload->op = BufferPayload::GET;
@@ -105,6 +104,28 @@ namespace e5 {
             return result_string;
         }
         return result_string;
+    }
+
+    /**
+     * @brief Appends data to the buffer content
+     *
+     * This method adds the provided string to the end of the current buffer content.
+     * Thread-safe through SyncBridge integration, can be called from any core
+     * or interrupt context.
+     *
+     * @param data String to append to the buffer content
+     */
+    void QuoteBuffer::append(const std::string data) { // NOLINT
+        if (bool expected = false; busy_guard.compare_exchange_strong(expected, true)) {
+            auto payload = std::make_unique<BufferPayload>();
+            payload->op = BufferPayload::APPEND;
+            payload->data = data;
+            if (const auto result = execute(std::move(payload)); result != PICO_OK) {
+                DEBUGV("[c%d][%llu][ERROR] QuoteBuffer::append() returned error %d.\n",
+                       rp2040.cpuid(), time_us_64(), result);
+            }
+            busy_guard = false;
+        }
     }
 
 } // namespace e5

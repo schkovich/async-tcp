@@ -17,9 +17,8 @@
 // rpipico.build.extra_flags=-DESPHOST_RESET=D5 -DESPHOST_HANDSHAKE=D7 -DESPHOST_DATA_READY=D6 -DESPHOST_CS=D1 -DESPHOSTSPI=SPI
 #endif
 
-#include <WiFi.h>
-#include <algorithm>
-#include <iostream>
+#include "../include/AsyncTcpClient.hpp"
+#include "../include/ContextManager.hpp"
 #include "../include/e5/EchoConnectedHandler.hpp"
 #include "../include/e5/EchoReceivedHandler.hpp"
 #include "../include/e5/IoWrite.hpp"
@@ -27,9 +26,11 @@
 #include "../include/e5/QotdReceivedHandler.hpp"
 #include "../include/e5/QuoteBuffer.hpp"
 #include "../include/e5/SerialPrinter.hpp"
-#include "../include/AsyncTcpClient.hpp"
-#include "../include/ContextManager.hpp"
+#include "e5/QotdClosedHandler.hpp"
 #include "secrets.h" // Contains STASSID, STAPSK, QOTD_HOST, ECHO_HOST, QOTD_PORT, ECHO_PORT
+#include <WiFi.h>
+#include <algorithm>
+#include <iostream>
 
 /**
  * Allocate separate 8KB stack for core1
@@ -91,10 +92,25 @@ e5::SerialPrinter serial_printer(ctx1);
 
 /**
  * @brief Connects to the "quote of the day" server and initiates a connection.
+ *
+ * This function only connects to the QOTD server if the quote buffer is empty,
+ * ensuring that we don't get a new quote until the current one has been
+ * fully processed by the echo server.
  */
 void get_quote_of_the_day() {
-    if (!qotd_client.connect(qotd_ip_address, qotd_port)) {
-        DEBUGV("Failed to connect to QOTD server.\n");
+    // Check if the buffer is empty before getting a new quote
+    const std::string buffer_content = qotd_buffer.get();
+
+    if (buffer_content.empty()) {
+        // Buffer is empty, safe to get a new quote
+        DEBUGWIRE("Quote buffer is empty, connecting to QOTD server for new quote\n");
+        if (!qotd_client.connect(qotd_ip_address, qotd_port)) {
+            DEBUGV("Failed to connect to QOTD server.\n");
+        }
+    } else {
+        // Buffer still has content, wait until it's processed
+        DEBUGWIRE("Quote buffer still has content (%d bytes), skipping QOTD request\n",
+               buffer_content.size());
     }
 }
 
@@ -102,7 +118,8 @@ void get_quote_of_the_day() {
  * @brief Connects to the echo server and sends data if available.
  *
  * This function checks if the echo client is connected. If not, it attempts to connect.
- * If connected and there is data in the transmission buffer, it sends the data to the server.
+ * If connected and there is data in the transmission buffer, it checks if the data
+ * contains the "End of Quote" marker indicating a complete quote before sending.
  */
 void get_echo() {
     if (!echo_client.connected()) {
@@ -110,15 +127,27 @@ void get_echo() {
             DEBUGV("Failed to connect to echo server..\n");
         }
     } else {
-        // Get the quote buffer content in a thread-safe manner
         const std::string buffer_content = qotd_buffer.get();
 
+        // Only process non-empty buffers
         if (!buffer_content.empty()) {
-            // Use IoWrite for thread-safe write operations
-            e5::IoWrite io_write(ctx0, echo_client);
-            io_write.write(buffer_content.c_str());
-        } else {
-            DEBUGV("Nothing to send to echo server.\n");
+            // Check if the buffer contains a complete quote.
+            if (const size_t marker_pos =
+                    buffer_content.find("--- End of Quote ---");
+                marker_pos != std::string::npos) {
+                DEBUGWIRE("Found complete quote with End of Quote marker at position %d\n", marker_pos);
+
+                // Send the complete buffer content including the marker
+                e5::IoWrite io_write(ctx0, echo_client);
+                DEBUGWIRE("Sending complete quote to echo server (%d bytes)\n", buffer_content.size());
+                io_write.write(buffer_content.c_str());
+
+                // Clear the buffer after sending
+                qotd_buffer.set(std::string(""));
+            } else {
+                // Quote is incomplete yet, waiting for more data
+                DEBUGWIRE("Quote in buffer is not complete yet (no End of Quote marker)\n");
+            }
         }
     }
 }
@@ -126,20 +155,20 @@ void get_echo() {
 /**
  * @brief Prints heap statistics using the SerialPrinter.
  */
-extern "C" void print_heap_stats(AsyncTcp::ContextManagerPtr& ctx) {
+extern "C" void print_heap_stats() {
     // Get heap data
     const int freeHeap = rp2040.getFreeHeap();
     const int usedHeap = rp2040.getUsedHeap();
     const int totalHeap = rp2040.getTotalHeap();
 
-    // Format the string with stats
-    auto heap_stats = std::make_unique<std::string>("Free: ");
-    heap_stats->append(std::to_string(freeHeap));
-    heap_stats->append(", Used: ");
-    heap_stats->append(std::to_string(usedHeap));
-    heap_stats->append(", Total: ");
-    heap_stats->append(std::to_string(totalHeap));
-    heap_stats->append("\n");
+    // Format the string with stats using the same syntax as notify_connect
+    auto heap_stats = std::make_unique<std::string>("Free: "
+        + std::to_string(freeHeap)
+        + ", Used: "
+        + std::to_string(usedHeap)
+        + ", Total: "
+        + std::to_string(totalHeap)
+        + "\n");
 
     serial_printer.print(std::move(heap_stats));
 }
@@ -150,13 +179,11 @@ extern "C" void print_heap_stats(AsyncTcp::ContextManagerPtr& ctx) {
 [[maybe_unused]] void setup() {
     Serial1.begin(115200);
     while(!Serial1) {
-        delay(10);
+        tight_loop_contents();
     }
-    delay(5000);
+
     RP2040::enableDoubleResetBootloader();
 
-    // Connect to Wi-Fi network
-    DEBUGV("Connecting to %s\n", ssid);
     multi.addAP(ssid, password);
 
     if (multi.run() != WL_CONNECTED) {
@@ -167,36 +194,34 @@ extern "C" void print_heap_stats(AsyncTcp::ContextManagerPtr& ctx) {
 
     Serial1.println("Wi-Fi connected");
 
-    // Resolve host names to IP addresses once at startup
     hostByName(qotd_host, qotd_ip_address, 2000);
     hostByName(echo_host, echo_ip_address, 2000);
-
-    // Initialize context on Core 0
 
     if (auto config = async_context_threadsafe_background_default_config(); !ctx0->initDefaultContext(config)) {
         panic_compact("CTX init failed on Core 0\n");
     }
 
-    // Echo client handlers
     auto echo_connected_handler = std::make_unique<e5::EchoConnectedHandler>(ctx0, echo_client, serial_printer);
     echo_client.setOnConnectedCallback(std::move(echo_connected_handler));
 
     auto echo_received_handler = std::make_unique<e5::EchoReceivedHandler>(ctx0, echo_client, serial_printer);
     echo_client.setOnReceivedCallback(std::move(echo_received_handler));
 
-    // QOTD client handlers with thread-safe buffer
-    auto qotd_connected_handler = std::make_unique<e5::QotdConnectedHandler>(ctx0, qotd_client, serial_printer);
+    auto qotd_connected_handler = std::make_unique<e5::QotdConnectedHandler>(ctx0, qotd_client, serial_printer, qotd_buffer);
     qotd_client.setOnConnectedCallback(std::move(qotd_connected_handler));
 
     auto qotd_received_handler = std::make_unique<e5::QotdReceivedHandler>(ctx0, qotd_buffer, qotd_client);
     qotd_client.setOnReceivedCallback(std::move(qotd_received_handler));
+
+    auto qotd_closed_handler = std::make_unique<e5::QotdClosedHandler>(ctx0, qotd_buffer, serial_printer);
+    qotd_client.setOnClosedCallback(std::move(qotd_closed_handler));
 
     operational = true;
 }
 
 /**
  * @brief Initializes the asynchronous context on Core 1.
- */
+  */
 [[maybe_unused]] void setup1() {
     while (!operational) {
         tight_loop_contents();
@@ -221,22 +246,19 @@ extern "C" void print_heap_stats(AsyncTcp::ContextManagerPtr& ctx) {
 
     const unsigned long currentMillis = millis();
 
-    // Check if it's time to request a new quote
     if (currentMillis - previous_red >= red_interval) {
         previous_red = currentMillis;
         get_quote_of_the_day();
     }
 
-    // Check if it's time to send data to echo server
     if (currentMillis - previous_yellow >= yellow_interval) {
         previous_yellow = currentMillis;
         get_echo();
     }
 
-    // Check if it's time to print heap statistics
     if (currentMillis - previous_blue >= blue_interval) {
         previous_blue = currentMillis;
-        print_heap_stats(ctx1);
+        print_heap_stats();
     }
 }
 

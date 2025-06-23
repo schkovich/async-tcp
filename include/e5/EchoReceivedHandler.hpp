@@ -4,11 +4,8 @@
  *
  * This file contains the EchoReceivedHandler class which implements the EventBridge
  * pattern to handle data received events for an echo client. When data is received,
- * this handler is triggered and processes the incoming data, typically by reversing
- * it and sending it back through the serial printer.
- *
- * The handler demonstrates how to implement the EventBridge pattern for specific
- * event handling with proper core affinity.
+ * this handler processes the incoming data directly as it arrives in natural chunks
+ * due to having Nagle's algorithm disabled.
  *
  * @author Goran
  * @date 2025-02-17
@@ -32,7 +29,7 @@ namespace e5 {
  * for an echo client. It implements the EventBridge pattern to ensure that
  * the handling occurs on the correct core with proper thread safety.
  *
- * The handler reads the received data, processes it (typically by reversing it),
+ * The handler processes naturally chunked data (since Nagle's algorithm is disabled)
  * and then outputs it through the SerialPrinter.
  */
 class EchoReceivedHandler final : public EventBridge
@@ -40,14 +37,15 @@ class EchoReceivedHandler final : public EventBridge
     AsyncTcpClient& m_io; /**< Reference to the TCP client handling the connection. */
     SerialPrinter& m_serial_printer; /**< Reference to the serial printer for output. */
     static constexpr int MAX_QOTD_SIZE = 512; /**< Maximum size for received data buffer. */
+    std::string m_buffer;  // accumulate incoming data
 
 protected:
     /**
      * @brief Handles the data received event.
      *
-     * This method is called when data is received on the TCP connection. It reads
-     * the available data, processes it (typically by reversing it), and then
-     * outputs it through the SerialPrinter.
+     * This method is called when data is received on the TCP connection. It processes
+     * the available data as it naturally arrives in chunks (with Nagle's algorithm disabled)
+     * and outputs it through the SerialPrinter.
      *
      * The method is executed on the core where the ContextManager was initialized,
      * ensuring proper core affinity for non-thread-safe operations.

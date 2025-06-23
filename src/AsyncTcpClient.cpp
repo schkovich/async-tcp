@@ -150,6 +150,7 @@ namespace AsyncTcp {
         _ctx->ref();
         _ctx->setTimeout(_timeout);
         _ctx->setOnConnectCallback([this] { _onConnectCallback(); });
+        _ctx->setOnCloseCallback([this] { _onCloseCallback(); });
         _ctx->setOnErrorCallback([this](auto &&PH1) { _onErrorCallback(std::forward<decltype(PH1)>(PH1)); });
         _ctx->setOnReceiveCallback([this](auto &&PH1) {
             _onReceiveCallback(std::forward<decltype(PH1)>(PH1));
@@ -399,22 +400,17 @@ namespace AsyncTcp {
     [[maybe_unused]] uint8_t AsyncTcpClient::getKeepAliveCount() const {
         return _ctx->getKeepAliveCount();
     }
-
-    void AsyncTcpClient::setOnReceiveCallback(std::shared_ptr<EventHandler> handler) {
-        _receive_callback_handler = std::move(handler);
-    }
     void AsyncTcpClient::setOnReceivedCallback(std::unique_ptr<EventBridge> worker) {
         _received_callback_worker = std::move(worker);
-    }
-
-    void AsyncTcpClient::setOnConnectCallback(std::shared_ptr<EventHandler> handler) {
-        _connected_callback_handler = std::move(handler);
     }
 
     void AsyncTcpClient::setOnConnectedCallback(std::unique_ptr<EventBridge> worker) {
         _connected_callback_worker = std::move(worker);
     }
 
+    void AsyncTcpClient::setOnClosedCallback(std::unique_ptr<EventBridge> worker) {
+        _closed_callback_worker = std::move(worker);
+    }
 
     void AsyncTcpClient::setOnErrorCallback(std::shared_ptr<EventHandler> handler) {
         _error_callback_handler = std::move(handler);
@@ -422,14 +418,24 @@ namespace AsyncTcp {
 
     void AsyncTcpClient::_onConnectCallback() const {
         const AIPAddress remote_ip = remoteIP();
-        (void) remote_ip;
-        DEBUGWIRE("AsyncTcpClient::_onConnectCallback(): Connected to %s.\n", remote_ip.toString().c_str());
+        (void)remote_ip;
+        DEBUGWIRE("AsyncTcpClient::_onConnectCallback(): Connected to %s.\n",
+                  remote_ip.toString().c_str());
         if (_connected_callback_handler) {
             _connected_callback_handler->handleEvent();
         } else if (_connected_callback_worker) {
             _connected_callback_worker->run();
         } else {
             DEBUGWIRE("AsyncTcpClient::_onConnectCallback: No event handler\n");
+        }
+    }
+
+    void AsyncTcpClient::_onCloseCallback() const {
+        DEBUGWIRE("AsyncTcpClient::_onCloseCallback(): Connection closed.\n");
+        if (_closed_callback_worker) {
+            _closed_callback_worker->run();
+        } else {
+            DEBUGWIRE("AsyncTcpClient::_onCloseCallback: No event handler\n");
         }
     }
 

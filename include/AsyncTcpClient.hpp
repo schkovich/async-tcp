@@ -331,6 +331,7 @@ namespace AsyncTcp {
         void setOnReceivedCallback(std::unique_ptr<EventBridge> worker);
         void setOnConnectCallback(std::shared_ptr<EventHandler> handler);
         void setOnConnectedCallback(std::unique_ptr<EventBridge> worker);
+        void setOnClosedCallback(std::unique_ptr<EventBridge> worker);
         void setOnErrorCallback(std::shared_ptr<EventHandler> handler);
 
     protected:
@@ -340,6 +341,7 @@ namespace AsyncTcp {
         std::shared_ptr<EventHandler> _error_callback_handler;
         std::unique_ptr<EventBridge> _received_callback_worker;
         std::unique_ptr<EventBridge> _connected_callback_worker;
+        std::unique_ptr<EventBridge> _closed_callback_worker;
 
         inline static bool defaultSync = true;
 
@@ -350,6 +352,8 @@ namespace AsyncTcp {
         static uint16_t _localPort;
 
         void _onConnectCallback() const;
+
+        void _onCloseCallback() const;
 
         void _onErrorCallback(err_t err);
 

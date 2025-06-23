@@ -25,7 +25,7 @@ namespace e5 {
  *
  * This method is called when the TCP connection is established. It:
  * 1. Configures the connection to use keep-alive to maintain the connection
- * 2. Enables Nagle's algorithm
+ * 2. Disables Nagle's algorithm for immediate data transmission
  * 3. Retrieves the local IP address of the connection
  * 4. Formats and prints a message with the local IP address
  *
@@ -35,7 +35,7 @@ namespace e5 {
 void EchoConnectedHandler::onWork() {
     // Configure connection parameters
     m_io.keepAlive();
-    m_io.setNoDelay(false);  // Enable Nagle's algorithm for better bandwidth efficiency
+    m_io.setNoDelay(true);  // Disable Nagle's algorithm for immediate packet transmission
 
     // Get the local IP address
     const std::string local_ip(m_io.localIP().toString().c_str());

@@ -521,6 +521,10 @@ class AsyncTcpClientContext {
         _ackCb = cb;
     }
 
+    void setOnCloseCallback(const std::function<void()>& cb) {
+        _closeCb = cb;
+    }
+
   protected:
     /**
      * @brief Checks if the operation has timed out based on a given start time
@@ -742,22 +746,21 @@ class AsyncTcpClientContext {
     err_t _recv(tcp_pcb *pcb, pbuf *pb, err_t err) {
         (void)pcb;
         (void)err;
+        // The remote peer sends a TCP segment with the FIN flag set to close.
         if (pb == nullptr) {
-            // connection closed by peer
             DEBUGWIRE(":rcl pb=%p sz=%d\n", _rx_buf,
                    _rx_buf ? _rx_buf->tot_len : -1);
-            _notify_error();
+            // flush any remaining data first
             if (_rx_buf && _rx_buf->tot_len) {
-                // there is still something to read
-                return ERR_OK;
-            } else {
-                // nothing in receive buffer,
-                // peer closed = nothing can be written:
-                // closing in the legacy way
-                // abort();
-                DEBUGWIRE("_recv closing in the legacy way\n");
-                // return ERR_ABRT;
+                auto size = std::make_unique<int>(getSize());
+                _receiveCb(std::move(size));
             }
+
+            if (_closeCb) {
+                _closeCb();
+            }
+
+            return ERR_ABRT;
         }
 
         if (_rx_buf) {
@@ -769,7 +772,7 @@ class AsyncTcpClientContext {
             _rx_buf_offset = 0;
         }
 
-        std::unique_ptr<int> size = std::make_unique<int>(getSize());
+        auto size = std::make_unique<int>(getSize());
         _receiveCb(std::move(size));
 
         return ERR_OK;
@@ -860,6 +863,7 @@ class AsyncTcpClientContext {
     std::function<void(err_t err)> _errorCb;
     std::function<void(std::unique_ptr<int>)> _receiveCb;
     std::function<void(struct tcp_pcb *tpcb, uint16_t len)> _ackCb;
+    std::function<void()> _closeCb;
     bool _sync;
 };
 } // namespace AsyncTcp

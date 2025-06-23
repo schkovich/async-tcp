@@ -65,7 +65,7 @@ namespace e5 {
      *
      * @param data Pointer to the data buffer
      * @param size Size of the data buffer
-     * @return Number of bytes written
+     * @return Amount bytes written
      */
     size_t IoWrite::write(const uint8_t* data, const size_t size) {
         auto payload = std::make_unique<WritePayload>();
@@ -84,7 +84,7 @@ namespace e5 {
      * or interrupt context.
      *
      * @param b Byte to write
-     * @return Number of bytes written (0 or 1)
+     * @return Amount bytes written (0 or 1)
      */
     size_t IoWrite::write(const uint8_t b) {
         return write(&b, 1);
@@ -98,7 +98,7 @@ namespace e5 {
      * or interrupt context.
      *
      * @param str Null-terminated string to write
-     * @return Number of bytes written
+     * @return Amount bytes written
      */
     size_t IoWrite::write(const char* str) {
         auto payload = std::make_unique<WritePayload>();
@@ -112,11 +112,11 @@ namespace e5 {
      * @brief Writes data from a stream to the client
      *
      * This method writes all available data from the provided stream to the AsyncTcpClient.
-     * Thread-safe through SyncBridge integration, can be called from any core
+     * Thread-safe through SyncBridge integration can be called from any core
      * or interrupt context.
      *
      * @param stream Stream to read data from
-     * @return Number of bytes written
+     * @return Amount bytes written
      */
     size_t IoWrite::write(Stream& stream) {
         auto payload = std::make_unique<WritePayload>();

@@ -52,6 +52,7 @@ class QuoteBuffer final : public SyncBridge {
         enum Operation {
             SET,     ///< Set the buffer content
             GET,     ///< Get the buffer content
+            APPEND,  ///< Append to the buffer content
         };
 
         Operation op;                ///< The operation to perform
@@ -77,7 +78,7 @@ public:
     /**
      * @brief Constructs a QuoteBuffer with the specified context manager
      *
-     * @param ctx Shared context manager for synchronized execution
+     * @param ctx Shared context manager for synchronised execution
      */
     explicit QuoteBuffer(const ContextManagerPtr& ctx);
 
@@ -102,6 +103,17 @@ public:
      * @return Copy of the current buffer content
      */
     std::string get();
+
+    /**
+     * @brief Appends data to the buffer content
+     *
+     * This method adds the provided string to the end of the current buffer content.
+     * Thread-safe through SyncBridge integration, can be called from any core
+     * or interrupt context.
+     *
+     * @param data String to append to the buffer content
+     */
+    void append(std::string data);
 };
 
 } // namespace e5

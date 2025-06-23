@@ -37,23 +37,6 @@ namespace e5 {
  */
 class QotdReceivedHandler final : public EventBridge
 {
-    /**
-     * @brief Simulates processing of received data with different consumption patterns.
-     *
-     * This method demonstrates how to handle partial data consumption by simulating
-     * different consumption patterns on successive calls.
-     *
-     * The static atomic counter ensures the pattern persists across multiple invocations,
-     * simulating real-world scenarios where a protocol parser might not consume
-     * all available data in a single call. The atomic type is used to ensure thread
-     * safety in case this method is called from different contexts.
-     *
-     * @param data Pointer to the data to be processed
-     * @param len Length of the data
-     * @return The number of bytes consumed
-     */
-    static size_t simulateProcessData(const char* data, size_t len);
-
     QuoteBuffer& m_quote_buffer; /**< Reference to the thread-safe buffer where the quote will be stored. */
     AsyncTcpClient& m_io; /**< Reference to the TCP client handling the connection. */
 

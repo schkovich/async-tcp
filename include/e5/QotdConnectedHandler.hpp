@@ -19,6 +19,7 @@
 #include "AsyncTcpClient.hpp"
 #include "ContextManager.hpp"
 #include "EventBridge.hpp"
+#include "QuoteBuffer.hpp"
 #include "SerialPrinter.hpp"
 
 namespace e5 {
@@ -38,6 +39,7 @@ namespace e5 {
 class QotdConnectedHandler final : public EventBridge {
     AsyncTcpClient& m_io; /**< Reference to the TCP client handling the connection. */
     SerialPrinter& m_serial_printer; /**< Reference to the serial printer for output. */
+    QuoteBuffer& m_quote_buffer; /**< Buffer for storing the quote data. */
 
 protected:
     /**
@@ -59,9 +61,10 @@ public:
      * @param ctx Shared pointer to the context manager that will execute this handler
      * @param io Reference to the TCP client that established the connection
      * @param serial_printer Reference to the serial printer for output messages
+     * @param quote_buffer
      */
-    explicit QotdConnectedHandler(const ContextManagerPtr& ctx, AsyncTcpClient& io, SerialPrinter& serial_printer) :
-        EventBridge(ctx), m_io(io), m_serial_printer(serial_printer) {}
+    explicit QotdConnectedHandler(const ContextManagerPtr& ctx, AsyncTcpClient& io, SerialPrinter& serial_printer, QuoteBuffer& quote_buffer) :
+        EventBridge(ctx), m_io(io), m_serial_printer(serial_printer), m_quote_buffer(quote_buffer) {}
 };
 
 } // namespace e5

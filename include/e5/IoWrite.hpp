@@ -13,7 +13,6 @@
  */
 
 #pragma once
-#include <cstdint>
 #include "AsyncTcpClient.hpp"
 #include "ContextManager.hpp"
 #include "SyncBridge.hpp"
@@ -28,7 +27,7 @@ namespace e5 {
      *
      * This class extends SyncBridge to provide thread-safe access to AsyncTcpClient
      * write operations. It ensures that all write operations happen on the core where
-     * the ContextManager was initialized, providing proper thread safety without
+     * the ContextManager was initialised, providing proper thread safety without
      * modifying the AsyncTcpClient class.
      *
      * Usage example:
@@ -55,7 +54,7 @@ namespace e5 {
                 STREAM      ///< Write from a stream
             };
 
-            WriteType type;             ///< Type of write operation
+            WriteType type;             ///< Write operation type
             const uint8_t* data;        ///< Data buffer for BUFFER operations
             const char* str;            ///< String for STRING operations
             Stream* stream;             ///< Stream for STREAM operations
@@ -70,7 +69,7 @@ namespace e5 {
          *
          * This method is called by the SyncBridge to perform write operations.
          * It ensures that all operations happen on the core where the ContextManager
-         * was initialized, providing thread safety.
+         * was initialised, providing thread safety.
          *
          * @param payload Write operation instruction
          * @return PICO_OK on success
@@ -95,7 +94,7 @@ namespace e5 {
          *
          * @param data Pointer to the data buffer
          * @param size Size of the data buffer
-         * @return Number of bytes written
+         * @return Amount bytes written
          */
         size_t write(const uint8_t* data, size_t size);
 
@@ -103,11 +102,11 @@ namespace e5 {
          * @brief Writes a single byte to the client
          *
          * This method writes a single byte to the AsyncTcpClient.
-         * Thread-safe through SyncBridge integration, can be called from any core
+         * Thread-safe through SyncBridge integration can be called from any core
          * or interrupt context.
          *
          * @param b Byte to write
-         * @return Number of bytes written (0 or 1)
+         * @return Amount bytes written, 0 or 1.
          */
         size_t write(uint8_t b);
 
@@ -119,7 +118,7 @@ namespace e5 {
          * or interrupt context.
          *
          * @param str Null-terminated string to write
-         * @return Number of bytes written
+         * @return Amount bytes written
          */
         size_t write(const char* str);
 
@@ -131,7 +130,7 @@ namespace e5 {
          * or interrupt context.
          *
          * @param stream Stream to read data from
-         * @return Number of bytes written
+         * @return Amount bytes written
          */
         size_t write(Stream& stream);
     };

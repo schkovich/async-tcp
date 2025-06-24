@@ -33,7 +33,6 @@
 #include <memory>
 #include "Client.h"
 #include "EventBridge.hpp"
-#include "EventHandler.hpp"
 #include "Print.h"
 
 namespace AsyncTcp {
@@ -327,18 +326,12 @@ namespace AsyncTcp {
 
         void setSync(bool sync) const;
 
-        void setOnReceiveCallback(std::shared_ptr<EventHandler> handler);
         void setOnReceivedCallback(std::unique_ptr<EventBridge> worker);
-        void setOnConnectCallback(std::shared_ptr<EventHandler> handler);
         void setOnConnectedCallback(std::unique_ptr<EventBridge> worker);
         void setOnClosedCallback(std::unique_ptr<EventBridge> worker);
-        void setOnErrorCallback(std::shared_ptr<EventHandler> handler);
 
     protected:
 
-        std::shared_ptr<EventHandler> _receive_callback_handler;
-        std::shared_ptr<EventHandler> _connected_callback_handler;
-        std::shared_ptr<EventHandler> _error_callback_handler;
         std::unique_ptr<EventBridge> _received_callback_worker;
         std::unique_ptr<EventBridge> _connected_callback_worker;
         std::unique_ptr<EventBridge> _closed_callback_worker;

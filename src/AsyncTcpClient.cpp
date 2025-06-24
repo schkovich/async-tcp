@@ -412,18 +412,12 @@ namespace AsyncTcp {
         _closed_callback_worker = std::move(worker);
     }
 
-    void AsyncTcpClient::setOnErrorCallback(std::shared_ptr<EventHandler> handler) {
-        _error_callback_handler = std::move(handler);
-    }
-
     void AsyncTcpClient::_onConnectCallback() const {
         const AIPAddress remote_ip = remoteIP();
         (void)remote_ip;
         DEBUGWIRE("AsyncTcpClient::_onConnectCallback(): Connected to %s.\n",
                   remote_ip.toString().c_str());
-        if (_connected_callback_handler) {
-            _connected_callback_handler->handleEvent();
-        } else if (_connected_callback_worker) {
+        if (_connected_callback_worker) {
             _connected_callback_worker->run();
         } else {
             DEBUGWIRE("AsyncTcpClient::_onConnectCallback: No event handler\n");
@@ -440,18 +434,13 @@ namespace AsyncTcp {
     }
 
     void AsyncTcpClient::_onErrorCallback(err_t err) {
-        if (_error_callback_handler) {
-            _error_callback_handler->handleEvent();
-        }
         DEBUGWIRE("The ctx failed with the error code: %d", err);
         _ctx->close();
         _ctx = nullptr;
     }
 
     void AsyncTcpClient::_onReceiveCallback(std::unique_ptr<int> size) const {
-        if (_receive_callback_handler) {
-            _receive_callback_handler->handleEvent();
-        } else if (_received_callback_worker) {
+        if (_received_callback_worker) {
             _received_callback_worker->run();
         } else {
             DEBUGWIRE("AsyncTcpClient::_onReceiveCallback: No event handler\n");

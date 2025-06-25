@@ -8,24 +8,37 @@
 namespace AsyncTcp {
 
 class PerpetualWorker final : public WorkerBase {
-    async_when_pending_worker_t m_worker;            /**< Internal worker instance for async processing. */
+        async_when_pending_worker_t
+            m_worker; /**< Internal worker instance for async processing. */
 
-public:
+    public:
+        PerpetualWorker();
 
-    PerpetualWorker();
+        /**
+         * @brief Retrieves the internal worker instance.
+         *
+         * @return Pointer to the `async_when_pending_worker_t` worker instance.
+         *
+         * This function provides access to the internal worker instance for use
+         * in managing and monitoring asynchronous work states. Primarily
+         * intended for internal use.
+         */
+        async_when_pending_worker_t *getWorker();
 
-    virtual ~PerpetualWorker();
+        /**
+         * @brief Sets a custom work function for the worker.
+         *
+         * @param handler_function Pointer to the function that defines the work
+         * logic for this worker.
+         *
+         * This function allows the user to specify the behavior of the worker
+         * when pending work is signaled. The work function receives an
+         * `async_context_t` and an `async_work_on_timeout` as parameters.
+         */
+        void setHandler(void (*handler_func)(async_context_t *,
+                                             async_when_pending_worker_t *));
 
-    /**
-     * @brief Retrieves the internal worker instance.
-     *
-     * @return Pointer to the `async_when_pending_worker_t` worker instance.
-     *
-     * This function provides access to the internal worker instance for use in
-     * managing and monitoring asynchronous work states. Primarily intended for internal use.
-     */
-    async_when_pending_worker_t *getWorker();
-
+        void setPayload(void *data) override;
 };
 
-} // AsyncTcp
+} // namespace AsyncTcp

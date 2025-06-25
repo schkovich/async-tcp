@@ -17,7 +17,7 @@ namespace AsyncTcp {
      */
     class EphemeralWorker final : public WorkerBase {
 
-        async_at_time_worker_t worker;            /**< Internal worker instance for async processing. */
+        async_at_time_worker_t m_worker;            /**< Internal worker instance for async processing. */
 
     public:
         /**

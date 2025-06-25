@@ -23,7 +23,7 @@
 #include <memory>
 #include <pico/async_context_threadsafe_background.h>
 #include "EphemeralWorker.hpp"
-#include "Worker.hpp"
+#include "PerpetualWorker.hpp"
 
 namespace AsyncTcp {
 
@@ -96,42 +96,35 @@ namespace AsyncTcp {
          * Workers added with this method remain registered until explicitly removed,
          * and can be triggered repeatedly by calling setWorkPending().
          *
-         * @param worker Reference to the Worker instance to be added to the context
+         * @param worker Reference to the PerpetualWorker instance to be added to the context
          * @return true if the worker was successfully added, false if the context is invalid or addition failed
          */
-        bool addWorker(Worker &worker) const;
+        bool addWorker(PerpetualWorker &worker) const;
 
         /**
-         * @brief Adds a raw pending worker structure to the context.
+         * @brief Adds a temporary worker that executes once after an optional
+         * delay.
          *
-         * This lower-level version allows adding workers defined using the raw SDK structures.
-         *
-         * @param worker Reference to the worker structure to be added
-         * @return true if the worker was successfully added, false if the context is invalid or addition failed
-         */
-        bool addWorker(async_when_pending_worker_t& worker) const;
-
-        /**
-         * @brief Adds a temporary worker that executes once after an optional delay.
-         *
-         * Unlike regular workers, ephemeral workers are automatically removed after execution
-         * and can be scheduled with a millisecond delay.
+         * Unlike regular workers, ephemeral workers are automatically removed
+         * after execution and can be scheduled with a millisecond delay.
          *
          * @param worker The ephemeral worker to schedule
-         * @param delay Milliseconds to wait before executing the worker (0 = immediate execution)
-         * @return true if the worker was successfully scheduled, false otherwise
+         * @param delay Milliseconds to wait before executing the worker (0 =
+         * immediate execution)
+         * @return true if the worker was successfully scheduled, false
+         * otherwise
          */
-        bool addEphemeralWorker(EphemeralWorker& worker, uint32_t delay = 0) const;
+        bool addWorker(EphemeralWorker& worker, uint32_t delay = 0) const;
 
         /**
          * @brief Removes a previously added worker from the context.
          *
          * This prevents the worker from being executed even if setWorkPending() is called.
          *
-         * @param worker Reference to the Worker instance to be removed
+         * @param worker Reference to the PerpetualWorker instance to be removed
          * @return true if the worker was successfully removed, false otherwise
          */
-        bool removeWorker(Worker& worker) const;
+        bool removeWorker(PerpetualWorker &worker) const;
 
         /**
          * @brief Removes an ephemeral worker from the scheduled queue before it executes.
@@ -148,18 +141,9 @@ namespace AsyncTcp {
          * to be executed. The context will call the worker's do_work function as soon
          * as the event loop processes the request.
          *
-         * @param worker Reference to the Worker instance for which work is set as pending
+         * @param worker Reference to the PerpetualWorker instance for which work is set as pending
          */
-        void setWorkPending(Worker& worker) const;
-
-        /**
-         * @brief Marks a raw worker structure as having pending work.
-         *
-         * This lower-level version works with raw SDK worker structures.
-         *
-         * @param worker Reference to the worker structure to be marked as having pending work
-         */
-        void setWorkPending(async_when_pending_worker_t& worker) const;
+        void setWorkPending(PerpetualWorker &worker) const;
 
         /**
          * @brief Acquires a blocking lock on the asynchronous context.

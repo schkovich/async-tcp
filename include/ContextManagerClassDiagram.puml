@@ -9,12 +9,12 @@ namespace AsyncTcp {
         --
         + ContextManager()
         + ~ContextManager()
-        + bool init()
+        + bool initDefaultContext(async_context_threadsafe_background_config_t& config)
         + bool addWorker(PerpetualWorker &)
         + bool addWorker(EphemeralWorker &, uint32_t delay = 0)
-        + bool removeWorker(Worker &)
+        + bool removeWorker(PerpetualWorker &)
         + bool removeWorker(EphemeralWorker &)
-        + void setPending(Worker &)
+        + void setWorkPending(PerpetualWorker &)
         + uint32_t execute(HandlerFunction, void*) const
         + void acquireLock() const
         + void releaseLock() const

@@ -34,11 +34,12 @@
 
 #include "ContextManager.hpp"
 #include "EphemeralWorker.hpp"
+#include "PerpetualWorker.hpp"
 
 namespace AsyncTcp {
 
     // Forward declarations of the bridging function with C linkage
-    extern "C" void worker_bridging_function(async_context_t* context, async_when_pending_worker_t* worker);
+    extern "C" void perpetual_bridging_function(async_context_t* context, async_when_pending_worker_t* worker);
     extern "C" void ephemeral_bridging_function(async_context_t* context, async_work_on_timeout* worker);
 
     /**
@@ -87,9 +88,9 @@ namespace AsyncTcp {
     class EventBridge
     {
         // Friend function declaration with C linkage
-        friend void worker_bridging_function(async_context_t* context, async_when_pending_worker_t* worker);
+        friend void perpetual_bridging_function(async_context_t* context, async_when_pending_worker_t* worker);
         friend void ephemeral_bridging_function(async_context_t* context, async_work_on_timeout* worker);
-        Worker m_worker = {}; /**< Worker instance that interfaces with the async context */
+        PerpetualWorker m_perpetual_worker = {}; /**< Worker instance that interfaces with the async context */
         EphemeralWorker m_ephemeral_worker; /**< Ephemeral worker instance for timed execution */
         const ContextManagerPtr& m_ctx; /**< Reference to the context manager */
         std::unique_ptr<EventBridge> m_self = nullptr; /**< Self-reference for automatic cleanup */

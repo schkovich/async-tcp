@@ -81,16 +81,16 @@ namespace AsyncTcp {
     }
 
     /**
-     * @brief Adds a Worker to the asynchronous context for ongoing task execution.
+     * @brief Adds a PerpetualWorker to the asynchronous context for ongoing task execution.
      *
      * This method registers a Worker object with the context, allowing it to be
      * triggered for execution when needed. It first checks context validity, then
      * attempts to add the worker to the underlying SDK context.
      *
-     * @param worker Reference to the Worker instance to be added
+     * @param worker Reference to the PerpetualWorker instance to be added
      * @return true if the worker was successfully added, false if the context is invalid or addition failed
      */
-    bool ContextManager::addWorker(Worker &worker) const {
+    bool ContextManager::addWorker(PerpetualWorker &worker) const {
         if (!m_context_core) {
             return false;
         }
@@ -102,62 +102,44 @@ namespace AsyncTcp {
     }
 
     /**
-     * @brief Adds a raw worker structure to the context.
+     * @brief Adds an ephemeral worker that executes once after an optional
+     * delay.
      *
-     * This lower-level version allows adding workers defined using the raw SDK structures,
-     * providing flexibility for advanced use cases. Like the higher-level version, it
-     * checks context validity before attempting the operation.
-     *
-     * @param worker Reference to the worker structure to be added
-     * @return true if the worker was successfully added, false if the context is invalid or addition failed
-     */
-    bool ContextManager::addWorker(async_when_pending_worker_t& worker) const {
-        if (!m_context_core) {
-            return false;
-        }
-        if (!async_context_add_when_pending_worker(m_context_core, &worker)) {
-            DEBUGV("ContextManager::addWorker 2 - Failed to add worker!\n");
-            return false;
-        }
-        DEBUGV("ContextManager::addWorker 2 - when pending worker added!\n");
-        return true;
-    }
-
-    /**
-     * @brief Adds an ephemeral worker that executes once after an optional delay.
-     *
-     * This method schedules a temporary worker that will be automatically removed after
-     * execution. It performs several validations to ensure the worker is properly configured:
+     * This method schedules a temporary worker that will be automatically
+     * removed after execution. It performs several validations to ensure the
+     * worker is properly configured:
      * 1. Checks if the context is valid
      * 2. Verifies that the worker has a work handler function
      * 3. Confirms that user data is set
      * 4. Attempts to add the worker with the specified delay
      *
      * @param worker The ephemeral worker to schedule
-     * @param delay Milliseconds to wait before executing the worker (0 = immediate execution)
-     * @return true if the worker was successfully scheduled, false if any validation failed
+     * @param delay Milliseconds to wait before executing the worker (0 =
+     * immediate execution)
+     * @return true if the worker was successfully scheduled, false if any
+     * validation failed
      */
-    bool ContextManager::addEphemeralWorker(EphemeralWorker& worker, const uint32_t delay) const {
+    bool ContextManager::addWorker(EphemeralWorker& worker, const uint32_t delay) const {
 
         if (!m_context_core) {
-            DEBUGV("ContextManager::addEphemeralWorker - no context!\n");
+            DEBUGV("ContextManager::addWorker - no context!\n");
             return false;
         }
 
         const auto worker_ptr = worker.getWorker();
 
         if (worker_ptr->do_work == nullptr) {
-            DEBUGV("ContextManager::addEphemeralWorker - handler function not defined!\n");
+            DEBUGV("ContextManager::addWorker - handler function not defined!\n");
             return false;
         }
 
         if (worker_ptr->user_data == nullptr) {
-            DEBUGV("ContextManager::addEphemeralWorker - no user data set!\n");
+            DEBUGV("ContextManager::addWorker - no user data set!\n");
             return false;
         }
 
         if (!async_context_add_at_time_worker_in_ms(m_context_core, worker_ptr, delay)) {
-            DEBUGV("ContextManager::addEphemeralWorker - Failed to add worker!\n");
+            DEBUGV("ContextManager::addWorker - Failed to add worker!\n");
             return false;
         }
 
@@ -165,15 +147,15 @@ namespace AsyncTcp {
     }
 
     /**
-     * @brief Removes a previously added worker from the context.
+     * @brief Removes a previously added PerpetualWorker from the context.
      *
      * This prevents the worker from being executed even if setWorkPending() is called.
      * The method checks context validity before attempting the removal.
      *
-     * @param worker Reference to the Worker instance to be removed
+     * @param worker Reference to the PerpetualWorker instance to be removed
      * @return true if the worker was successfully removed, false if the context is invalid or removal failed
      */
-    bool ContextManager::removeWorker(Worker &worker) const {
+    bool ContextManager::removeWorker(PerpetualWorker &worker) const {
         if (!m_context_core) {
             DEBUGV("ContextManager::removeWorker - no context!\n");
             return false;
@@ -210,31 +192,17 @@ namespace AsyncTcp {
     }
 
     /**
-     * @brief Marks a worker as having pending work to be processed.
+     * @brief Marks a PerpetualWorker as having pending work to be processed.
      *
      * This method signals the asynchronous context that the worker has work ready
      * to be executed. The context will call the worker's do_work function as soon
      * as the event loop processes the request.
      *
-     * @param worker Reference to the Worker instance to be signaled
+     * @param worker Reference to the PerpetualWorker instance to be signaled
      */
-    void ContextManager::setWorkPending(Worker &worker) const {
+    void ContextManager::setWorkPending(PerpetualWorker &worker) const {
         if (m_context_core) {
             async_context_set_work_pending(m_context_core, worker.getWorker());
-        }
-    }
-
-    /**
-     * @brief Marks a raw worker structure as having pending work.
-     *
-     * This lower-level version works with raw SDK worker structures, providing
-     * the same functionality as the Worker-based version.
-     *
-     * @param worker Reference to the worker structure to be signaled
-     */
-    void ContextManager::setWorkPending(async_when_pending_worker_t& worker) const {
-        if (m_context_core) {
-            async_context_set_work_pending(m_context_core, &worker);
         }
     }
 

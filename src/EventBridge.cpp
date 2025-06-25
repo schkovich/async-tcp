@@ -20,10 +20,10 @@
  * - Queue monitoring for performance analysis
  */
 
+#include <Arduino.h>
+
 #include "EventBridge.hpp"
 #include "ContextManager.hpp"
-#include "e5/QueueMonitor.hpp"
-#include "e5/WorkerCounter.hpp"
 
 namespace AsyncTcp {
 

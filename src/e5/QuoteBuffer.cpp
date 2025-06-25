@@ -10,8 +10,8 @@
  * @ingroup AsyncTCPClient
  */
 
+#include <Arduino.h>
 #include "e5/QuoteBuffer.hpp"
-#include "e5/LedDebugger.hpp"
 
 namespace e5 {
 

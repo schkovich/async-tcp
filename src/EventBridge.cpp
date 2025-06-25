@@ -43,20 +43,9 @@ namespace AsyncTcp {
         // Store a direct pointer to this EventBridge instance
         m_perpetual_worker.setPayload(this);
         m_ctx->addWorker(m_perpetual_worker);
-    }
-
-    /**
-     * @brief Constructs an EventBridge instance for ephemeral "at time" workers.
-     *
-     * Sets up the provided ephemeral worker with the bridging function. The worker
-     * will be automatically removed from the context manager after execution.
-     *
-     * @param ctx Shared pointer to the context manager that will execute this worker
-     * @param worker The ephemeral worker to use
-     */
-    EventBridge::EventBridge(const ContextManagerPtr& ctx, EphemeralWorker worker)
-    : m_ephemeral_worker(std::move(worker)), m_ctx(ctx) {
+        m_ephemeral_worker = EphemeralWorker();
         m_ephemeral_worker.setHandler(&ephemeral_bridging_function);
+        // Store a direct pointer to this EventBridge instance
         m_ephemeral_worker.setPayload(this);
     }
 

@@ -148,17 +148,6 @@ namespace AsyncTcp {
         explicit EventBridge(const ContextManagerPtr& ctx);
 
         /**
-         * @brief Constructs an EventBridge instance for ephemeral "at time" workers.
-         *
-         * Sets up the provided ephemeral worker with the bridging function. The worker
-         * will be automatically removed from the context manager after execution.
-         *
-         * @param ctx A reference to unique pointer to the context manager that will execute this worker
-         * @param worker The ephemeral worker to use
-         */
-        explicit EventBridge(const ContextManagerPtr& ctx, EphemeralWorker worker);
-
-        /**
          * @brief Destructor that handles cleanup based on worker type.
          *
          * For persistent "when pending" workers, deregisters the worker from the context manager.

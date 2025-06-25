@@ -58,10 +58,9 @@ namespace e5 {
          * @brief Constructs a PrintHandler.
          *
          * @param ctx Shared pointer to the context manager that will execute this handler
-         * @param worker Ephemeral worker instance for immediate execution
          * @param message Message buffer containing the text to print
          */
-        explicit PrintHandler(const ContextManagerPtr& ctx, EphemeralWorker worker, std::unique_ptr<std::string> message);
+        explicit PrintHandler(const ContextManagerPtr& ctx, std::unique_ptr<std::string> message);
 
         /**
          * @brief Static factory method that creates a PrintHandler with self-ownership
@@ -74,7 +73,7 @@ namespace e5 {
          * @return A pointer to the created PrintHandler
          */
         static void create(const ContextManagerPtr& ctx, std::unique_ptr<std::string> message) {
-            auto handler = std::make_unique<PrintHandler>(ctx, EphemeralWorker(), std::move(message));
+            auto handler = std::make_unique<PrintHandler>(ctx, std::move(message));
             PrintHandler* raw_ptr = handler.get();
             raw_ptr->takeOwnership(std::move(handler));
             raw_ptr->run(0);

@@ -51,6 +51,6 @@ namespace e5 {
      * @param worker
      * @param message Message to print
      */
-    PrintHandler::PrintHandler(const ContextManagerPtr& ctx, EphemeralWorker worker, std::unique_ptr<std::string> message) :
-        EventBridge(ctx, std::move(worker)), m_message(std::move(message)) {}
+    PrintHandler::PrintHandler(const ContextManagerPtr& ctx, std::unique_ptr<std::string> message) :
+        EventBridge(ctx), m_message(std::move(message)) {}
 } // namespace e5

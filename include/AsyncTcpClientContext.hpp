@@ -32,7 +32,7 @@ namespace async_tcp {
 
     class AsyncTcpClientContext;
 
-    class AsyncTcpClient;
+    class TcpClient;
 
     typedef void (*discard_cb_t)(void *, AsyncTcpClientContext *);
 
@@ -43,7 +43,7 @@ namespace async_tcp {
                 : _pcb(pcb), _rx_buf(nullptr), _rx_buf_offset(0),
                   _discard_cb(discard_cb), _discard_cb_arg(discard_cb_arg),
                   _ref_cnt(0), _next(nullptr),
-                  _sync(AsyncTcpClient::getDefaultSync()) {
+                  _sync(TcpClient::getDefaultSync()) {
                 tcp_setprio(_pcb, TCP_PRIO_MIN);
                 tcp_arg(_pcb, this);
                 tcp_recv(_pcb, &_s_recv);
@@ -92,7 +92,7 @@ namespace async_tcp {
                 return err;
             }
 
-            ~AsyncTcpClientContext() = default;
+            TcpClientContext() = default;
 
             [[nodiscard]] AsyncTcpClientContext *next() const { return _next; }
 

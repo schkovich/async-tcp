@@ -58,10 +58,10 @@ guarantees.
 
 ### 6. IoWrite
 
-- Thread-safe wrapper for AsyncTcpClient write operations
+- Thread-safe wrapper for TcpClient write operations
 - Ensures write operations execute on the correct core
 - Supports writing from buffers, strings, and streams
-- Non-invasive approach that doesn't modify AsyncTcpClient
+- Non-invasive approach that doesn't modify TcpClient
 
 ## Implementation Patterns
 
@@ -157,7 +157,7 @@ auto ctx = std::make_unique<ContextManager>();
 ctx->initDefaultContext();
 
 // Create TCP client and serial printer
-AsyncTcpClient client;
+TcpClient client;
 SerialPrinter printer(ctx);
 
 // Set up event handlers

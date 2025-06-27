@@ -71,8 +71,8 @@ namespace async_tcp {
      * This class implements a TCP client that supports asynchronous operations.
      * It derives from the Arduino Client and SList for managing client lists.
      */
-    class AsyncTcpClient : public arduino::Client,
-                           public SList<AsyncTcpClient> {
+    class TcpClient : public arduino::Client,
+                           public SList<TcpClient> {
 
         protected:
             /**
@@ -80,18 +80,18 @@ namespace async_tcp {
              * with a specific context.
              * @param ctx Pointer to an AsyncTcpClientContext object.
              */
-            explicit AsyncTcpClient(AsyncTcpClientContext *ctx);
+            explicit TcpClient(AsyncTcpClientContext *ctx);
 
         public:
             /**
              * @brief Default constructor for the AsyncTcpClient class.
              */
-            AsyncTcpClient();
+            TcpClient();
 
             /**
              * @brief Destructor for the AsyncTcpClient class.
              */
-            virtual ~AsyncTcpClient();
+            virtual TcpClient();
 
             /**
              * @brief Copy constructor for AsyncTcpClient.
@@ -113,7 +113,7 @@ namespace async_tcp {
              * - The new client is automatically added to the `SList` upon
              * creation.
              */
-            AsyncTcpClient(const AsyncTcpClient &);
+            TcpClient(const TcpClient &);
 
             /**
              * @brief Assignment operator for AsyncTcpClient.
@@ -141,7 +141,7 @@ namespace async_tcp {
              * `_ctx->ref()` is called after assignment to update reference
              * counting.
              */
-            AsyncTcpClient &operator=(const AsyncTcpClient &);
+            TcpClient &operator=(const TcpClient &);
 
             /**
              * @brief Creates a copy of the current AsyncTcpClient object.
@@ -163,8 +163,7 @@ namespace async_tcp {
              * @see The C++ Core Guidelines on copying virtual classes:
              * https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rc-copy-virtual
              */
-            [[maybe_unused]] [[nodiscard]] virtual std::unique_ptr<
-                AsyncTcpClient>
+            [[maybe_unused]] [[nodiscard]] virtual std::unique_ptr<TcpClient>
             clone() const;
 
             virtual uint8_t status();
@@ -332,7 +331,7 @@ namespace async_tcp {
 
             [[maybe_unused]] static void stopAll();
 
-            [[maybe_unused]] static void stopAllExcept(AsyncTcpClient *c);
+            [[maybe_unused]] static void stopAllExcept(TcpClient *c);
 
             void
             keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC,
@@ -389,7 +388,7 @@ namespace async_tcp {
 
             AsyncTcpClientContext *_ctx;
 
-            AsyncTcpClient *_owned;
+            TcpClient *_owned;
 
             static uint16_t _localPort;
 

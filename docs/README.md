@@ -1,7 +1,7 @@
 Example: Asynchronous TCP Client on Arduino RP2040 Connect (Raspberry Pi Pico Core)
 ===================================================================================
 
-This example demonstrates the usage of the `AsyncTcpClient` library on the Arduino RP2040 Connect board, running the *
+This example demonstrates the usage of the `TcpClient` library on the Arduino RP2040 Connect board, running the *
 *Raspberry Pi Pico Arduino core**. It establishes asynchronous TCP connections to two servers: a "Quote of the Day" (
 QOTD) server and an echo server. This example leverages **ESP-Hosted-FG firmware** on the ESP32 co-processor for Wi-Fi
 connectivity and utilises **Raspberry Pi Pico SDK**'s asynchronous context handling for efficient event-based
@@ -17,7 +17,7 @@ Key Components and Functionality
     * Demonstrates seamless integration with ESP-Hosted-FG firmware on non-standard cores like the Raspberry Pi Pico
       Arduino core.
 
-2. **Asynchronous TCP Client (`AsyncTcpClient`)**
+2. **Asynchronous TCP Client (`TcpClient`)**
 
     * Establishes two TCP connections:
         * **QOTD Server** (Quote of the Day) - Retrieves quotes and processes them using connection closure as the
@@ -94,7 +94,7 @@ How to Run
 4. Monitor the serial output to see quotes being received, processed, and echoed back.
 
 The program will connect to the QOTD server at regular intervals, process the complete quotes when connections close,
-and then send them to the echo server. This demonstrates the `AsyncTcpClient` library's asynchronous networking
+and then send them to the echo server. This demonstrates the `TcpClient` library's asynchronous networking
 capabilities, proper protocol handling, and thread-safe operation in a dual-core environment.
 
 Purpose
@@ -102,7 +102,7 @@ Purpose
 This example serves as a proof-of-concept demonstrating how to replace boost::asio functionality in an embedded context
 using:
 
-- AsyncTcpClient for network operations (replacing boost networking)
+- TcpClient for network operations (replacing boost networking)
 - Pico SDK's async_context for event handling (replacing boost event loop)
 - EventBridge pattern for handling network events.
 - SyncBridge pattern for thread-safe resource access.

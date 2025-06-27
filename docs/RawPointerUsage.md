@@ -1,9 +1,9 @@
 ### Raw Pointer Usage in async_tcp Library
 
-The use of raw pointers for `AsyncTcpClient` is a deliberate design choice that aligns with both the Pico SDK
+The use of raw pointers for `TcpClient` is a deliberate design choice that aligns with both the Pico SDK
 requirements and the client's own lifecycle management:
 
-1. **AsyncTcpClient Lifecycle**
+1. **TcpClient Lifecycle**
     - Has built-in reference counting through `_ctx`
     - Protected constructor with `AsyncTcpClientContext`
     - Copy constructor manages reference counting via `_ctx->ref()`
@@ -11,10 +11,10 @@ requirements and the client's own lifecycle management:
 2. **Client Pointer Journey**
    ```cpp
    // Step 1: Client instance in main
-   async_tcp::AsyncTcpClient qotd_client;
+   async_tcp::TcpClient qotd_client;
 
    // Step 2: Handler initialization
-   void ReceiveCallbackHandler::init(AsyncTcpClient &client) {
+   void ReceiveCallbackHandler::init(TcpClient &client) {
        _client = &client;  // Stores raw pointer
    }
 
@@ -52,7 +52,7 @@ maintaining compatibility with the Pico SDK's async context system.
 **Object Lifecycle Diagram**
 
 ```plaintext
-[AsyncTcpClient] --owns--> [AsyncTcpClientContext]
+[TcpClient] --owns--> [AsyncTcpClientContext]
        ^                           |
        |                          |
        +--------ref counting------+
@@ -64,7 +64,7 @@ maintaining compatibility with the Pico SDK's async context system.
 [Main]
    |
    v
-[AsyncTcpClient] ----raw ptr----> [ReceiveCallbackHandler]
+[TcpClient] ----raw ptr----> [ReceiveCallbackHandler]
                                          |
                                          v
                                   [WorkerData (unique_ptr)]
@@ -85,7 +85,7 @@ maintaining compatibility with the Pico SDK's async context system.
    |                           |
 [Context Lock]            [Context Lock]
    |                           |
-[AsyncTcpClient]          [Worker]
+[TcpClient]          [Worker]
    |                           |
 [Network Events]         [Processing]
 ```

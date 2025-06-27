@@ -11,7 +11,6 @@
  */
 
 #include "SyncBridge.hpp"
-#include "Arduino.h"
 
 namespace AsyncTcp {
 

@@ -19,7 +19,7 @@
  */
 
 #include "ContextManager.hpp"
-#include "Arduino.h"
+#include <Arduino.h>
 
 namespace AsyncTcp {
 

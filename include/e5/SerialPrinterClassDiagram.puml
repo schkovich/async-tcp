@@ -5,10 +5,9 @@
 namespace e5 {
     class SerialPrinter {
         - const AsyncTcp::ContextManagerPtr & m_ctx
-        - std::atomic<bool> busy
         --
         + SerialPrinter(const AsyncTcp::ContextManagerPtr& ctx)
-        + uint32_t print(const char* message)
+        + uint32_t print(std::unique_ptr<std::string> message)
     }
 }
 

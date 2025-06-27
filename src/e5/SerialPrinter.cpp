@@ -19,10 +19,6 @@ namespace e5 {
 
     // Print method implementation for std::string
     uint32_t SerialPrinter::print(std::unique_ptr<std::string> message) {
-        // if (message.empty()) {
-        //     DEBUGV("[c%d][%llu][ERROR] SerialPrinter::print - null message pointer\n", rp2040.cpuid(), elapsed());
-        //     return PICO_ERROR_INVALID_DATA;
-        // }
         // Create and run handler using factory method
         PrintHandler::create(m_ctx, std::move(message));
         return PICO_OK; // Return success code

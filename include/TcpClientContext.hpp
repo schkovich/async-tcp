@@ -30,15 +30,15 @@
 
 namespace async_tcp {
 
-    class AsyncTcpClientContext;
+    class TcpClientContext;
 
     class TcpClient;
 
-    typedef void (*discard_cb_t)(void *, AsyncTcpClientContext *);
+    typedef void (*discard_cb_t)(void *, TcpClientContext *);
 
-    class AsyncTcpClientContext {
+    class TcpClientContext {
         public:
-            AsyncTcpClientContext(tcp_pcb *pcb, const discard_cb_t discard_cb,
+            TcpClientContext(tcp_pcb *pcb, const discard_cb_t discard_cb,
                                   void *discard_cb_arg)
                 : _pcb(pcb), _rx_buf(nullptr), _rx_buf_offset(0),
                   _discard_cb(discard_cb), _discard_cb_arg(discard_cb_arg),
@@ -92,11 +92,11 @@ namespace async_tcp {
                 return err;
             }
 
-            ~AsyncTcpClientContext() = default;
+            TcpClientContext() = default;
 
-            [[nodiscard]] AsyncTcpClientContext *next() const { return _next; }
+            [[nodiscard]] TcpClientContext *next() const { return _next; }
 
-            AsyncTcpClientContext *next(AsyncTcpClientContext *new_next) {
+            TcpClientContext *next(TcpClientContext *new_next) {
                 _next = new_next;
                 return _next;
             }
@@ -134,7 +134,7 @@ namespace async_tcp {
                 }
 #endif
                 err_t err = tcp_connect(_pcb, addr, port,
-                                        &AsyncTcpClientContext::_s_connected);
+                                        &TcpClientContext::_s_connected);
                 if (err != ERR_OK) {
                     DEBUGWIRE(":connect err %d\n", static_cast<int>(err));
                     return 0;
@@ -853,7 +853,7 @@ namespace async_tcp {
                                  struct pbuf *pb, err_t err) {
                 if (arg) {
                     auto *context =
-                        reinterpret_cast<AsyncTcpClientContext *>(arg);
+                        reinterpret_cast<TcpClientContext *>(arg);
                     return context->_recv(tpcb, pb, err);
                 } else {
                     return ERR_OK;
@@ -862,13 +862,13 @@ namespace async_tcp {
 
             static void _s_error(void *arg, err_t err) {
                 if (arg) {
-                    reinterpret_cast<AsyncTcpClientContext *>(arg)->_error(err);
+                    reinterpret_cast<TcpClientContext *>(arg)->_error(err);
                 }
             }
 
             static err_t _s_poll(void *arg, struct tcp_pcb *tpcb) {
                 if (arg) {
-                    return reinterpret_cast<AsyncTcpClientContext *>(arg)
+                    return reinterpret_cast<TcpClientContext *>(arg)
                         ->_poll(tpcb);
                 } else {
                     return ERR_OK;
@@ -878,7 +878,7 @@ namespace async_tcp {
             static err_t _s_acked(void *arg, struct tcp_pcb *tpcb,
                                   uint16_t len) {
                 if (arg) {
-                    return reinterpret_cast<AsyncTcpClientContext *>(arg)
+                    return reinterpret_cast<TcpClientContext *>(arg)
                         ->_acked(tpcb, len);
                 } else {
                     return ERR_OK;
@@ -888,7 +888,7 @@ namespace async_tcp {
             static err_t _s_connected(void *arg, struct tcp_pcb *pcb,
                                       err_t err) {
                 if (arg) {
-                    return reinterpret_cast<AsyncTcpClientContext *>(arg)
+                    return reinterpret_cast<TcpClientContext *>(arg)
                         ->_connected(pcb, err);
                 } else {
                     return ERR_OK;
@@ -909,7 +909,7 @@ namespace async_tcp {
             //    bool _connect_pending = false;
 
             int8_t _ref_cnt;
-            AsyncTcpClientContext *_next;
+            TcpClientContext *_next;
             std::function<void()> _connectCb;
             std::function<void(err_t err)> _errorCb;
             std::function<void(std::unique_ptr<int>)> _receiveCb;

@@ -53,7 +53,7 @@ namespace async_tcp {
 #define TCP_DEFAULT_KEEP_ALIVE_INTERVAL_SEC 75 // 75 sec
 #define TCP_DEFAULT_KEEP_ALIVE_COUNT 9         // fault after 9 failures
 
-    class AsyncTcpClientContext;
+    class TcpClientContext;
 
     class WiFiServer; // Is it necessary and used?
 
@@ -80,7 +80,7 @@ namespace async_tcp {
              * with a specific context.
              * @param ctx Pointer to an AsyncTcpClientContext object.
              */
-            explicit TcpClient(AsyncTcpClientContext *ctx);
+            explicit TcpClient(TcpClientContext *ctx);
 
         public:
             /**
@@ -386,7 +386,7 @@ namespace async_tcp {
 
             inline static bool defaultSync = true;
 
-            AsyncTcpClientContext *_ctx;
+            TcpClientContext *_ctx;
 
             TcpClient *_owned;
 

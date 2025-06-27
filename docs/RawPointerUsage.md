@@ -5,7 +5,7 @@ requirements and the client's own lifecycle management:
 
 1. **TcpClient Lifecycle**
     - Has built-in reference counting through `_ctx`
-    - Protected constructor with `AsyncTcpClientContext`
+    - Protected constructor with `TcpClientContext`
     - Copy constructor manages reference counting via `_ctx->ref()`
 
 2. **Client Pointer Journey**
@@ -52,7 +52,7 @@ maintaining compatibility with the Pico SDK's async context system.
 **Object Lifecycle Diagram**
 
 ```plaintext
-[TcpClient] --owns--> [AsyncTcpClientContext]
+[TcpClient] --owns--> [TcpClientContext]
        ^                           |
        |                          |
        +--------ref counting------+

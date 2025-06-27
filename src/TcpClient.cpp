@@ -20,7 +20,7 @@
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "TcpClient.hpp"
-#include <AsyncTcpClientContext.hpp>
+#include <TcpClientContext.hpp>
 #include <utility> // @todo: clarify if needed
 
 #include "EventBridge.hpp"
@@ -61,7 +61,7 @@ namespace async_tcp {
         _add(this);
     }
 
-    TcpClient::TcpClient(AsyncTcpClientContext *ctx)
+    TcpClient::TcpClient(TcpClientContext *ctx)
         : _ctx(ctx), _owned(nullptr) {
         _timeout = 5000;
         _ctx->ref();
@@ -150,7 +150,7 @@ namespace async_tcp {
             pcb->local_port = _localPort++;
         }
 
-        _ctx = new AsyncTcpClientContext(pcb, nullptr, nullptr);
+        _ctx = new TcpClientContext(pcb, nullptr, nullptr);
         _ctx->ref();
         _ctx->setTimeout(_timeout);
         _ctx->setOnConnectCallback([this] { _onConnectCallback(); });

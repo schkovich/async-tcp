@@ -6,7 +6,7 @@
 
 #include "WorkerBase.hpp"
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     /**
      * @class EphemeralWorker

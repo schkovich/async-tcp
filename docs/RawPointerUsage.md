@@ -1,4 +1,4 @@
-### Raw Pointer Usage in AsyncTcp Library
+### Raw Pointer Usage in async_tcp Library
 
 The use of raw pointers for `AsyncTcpClient` is a deliberate design choice that aligns with both the Pico SDK
 requirements and the client's own lifecycle management:
@@ -11,7 +11,7 @@ requirements and the client's own lifecycle management:
 2. **Client Pointer Journey**
    ```cpp
    // Step 1: Client instance in main
-   AsyncTcp::AsyncTcpClient qotd_client;
+   async_tcp::AsyncTcpClient qotd_client;
 
    // Step 2: Handler initialization
    void ReceiveCallbackHandler::init(AsyncTcpClient &client) {

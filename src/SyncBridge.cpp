@@ -14,7 +14,7 @@
 
 #include "SyncBridge.hpp"
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     /**
      * @brief Internal execution method that delegates to the derived class

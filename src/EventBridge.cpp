@@ -27,7 +27,7 @@
 #include "ContextManager.hpp"
 #include "EventBridge.hpp"
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     /**
      * @brief Constructs an EventBridge instance for persistent "when pending"

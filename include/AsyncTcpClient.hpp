@@ -40,7 +40,7 @@
 #include "Print.h"
 #include <memory>
 
-namespace AsyncTcp {
+namespace async_tcp {
 
 #ifndef TCP_MSS
 #define TCP_MSS 1460 // lwip1.4

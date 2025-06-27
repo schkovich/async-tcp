@@ -28,7 +28,7 @@
 #include <lwip/tcp.h>
 #include <utility>
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     class AsyncTcpClientContext;
 

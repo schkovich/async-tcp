@@ -2,7 +2,7 @@
 
 #include "EphemeralWorker.hpp"
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     /**
      * @brief Constructs a `EphemeralWorker` instance with default

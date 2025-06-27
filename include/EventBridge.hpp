@@ -39,7 +39,7 @@
 #include "EphemeralWorker.hpp"
 #include "PerpetualWorker.hpp"
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     // Forward declarations of the bridging function with C linkage
     extern "C" void

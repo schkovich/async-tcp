@@ -25,7 +25,7 @@
 #include "ContextManager.hpp"
 #include <Arduino.h>
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     /**
      * @brief Constructs a ContextManager instance with a specific background

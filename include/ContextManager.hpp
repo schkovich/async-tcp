@@ -29,7 +29,7 @@
 #include <memory>
 #include <pico/async_context_threadsafe_background.h>
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     /**
      * @brief Function pointer type for asynchronous work handlers.

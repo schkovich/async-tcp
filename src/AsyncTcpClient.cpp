@@ -28,9 +28,9 @@
 #include "lwip/tcp.h"
 
 template <>
-AsyncTcp::AsyncTcpClient *SList<AsyncTcp::AsyncTcpClient>::_s_first = nullptr;
+async_tcp::AsyncTcpClient *SList<async_tcp::AsyncTcpClient>::_s_first = nullptr;
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     using ::std::make_unique;
     using ::std::unique_ptr;

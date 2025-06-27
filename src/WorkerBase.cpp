@@ -4,4 +4,4 @@
 
 #include "../include/WorkerBase.hpp"
 
-namespace AsyncTcp {} // namespace AsyncTcp
+namespace async_tcp {} // namespace AsyncTcp

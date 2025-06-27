@@ -4,7 +4,7 @@
 
 #include "PerpetualWorker.hpp"
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     PerpetualWorker::PerpetualWorker() : m_worker{} {}
 

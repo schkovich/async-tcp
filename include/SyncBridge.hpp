@@ -3,7 +3,7 @@
 #include "ContextManager.hpp"
 #include <memory>
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     /**
      * @struct SyncPayload

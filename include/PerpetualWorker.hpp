@@ -5,7 +5,7 @@
 #pragma once
 #include "WorkerBase.hpp"
 
-namespace AsyncTcp {
+namespace async_tcp {
 
     class PerpetualWorker final : public WorkerBase {
             async_when_pending_worker_t

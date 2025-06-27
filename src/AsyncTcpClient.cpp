@@ -28,7 +28,7 @@
 #include "lwip/tcp.h"
 
 template <>
-AsyncTcp::AsyncTcpClient* SList<AsyncTcp::AsyncTcpClient>::_s_first = nullptr;
+AsyncTcp::AsyncTcpClient *SList<AsyncTcp::AsyncTcpClient>::_s_first = nullptr;
 
 namespace AsyncTcp {
 
@@ -38,9 +38,10 @@ namespace AsyncTcp {
     uint16_t AsyncTcpClient::_localPort = 0;
 
     static bool defaultNoDelay = true; // false == Nagle enabled by default
-    static bool defaultSync = false; // @todo: clarify if this is used
+    static bool defaultSync = false;   // @todo: clarify if this is used
 
-    [[maybe_unused]] void AsyncTcpClient::setDefaultNoDelay(const bool noDelay) {
+    [[maybe_unused]] void
+    AsyncTcpClient::setDefaultNoDelay(const bool noDelay) {
         defaultNoDelay = noDelay;
     }
 
@@ -61,7 +62,8 @@ namespace AsyncTcp {
         _add(this);
     }
 
-    AsyncTcpClient::AsyncTcpClient(AsyncTcpClientContext *ctx) : _ctx(ctx), _owned(nullptr) {
+    AsyncTcpClient::AsyncTcpClient(AsyncTcpClientContext *ctx)
+        : _ctx(ctx), _owned(nullptr) {
         _timeout = 5000;
         _ctx->ref();
 
@@ -82,7 +84,8 @@ namespace AsyncTcp {
         return make_unique<AsyncTcpClient>(*this);
     }
 
-    AsyncTcpClient::AsyncTcpClient(const AsyncTcpClient &other) : Client(other), SList(other) {
+    AsyncTcpClient::AsyncTcpClient(const AsyncTcpClient &other)
+        : Client(other), SList(other) {
         _ctx = other._ctx;
         _timeout = other._timeout;
         _localPort = localPort();
@@ -93,7 +96,7 @@ namespace AsyncTcp {
         _add(this);
     }
 
-    AsyncTcpClient& AsyncTcpClient::operator=(const AsyncTcpClient& other) {
+    AsyncTcpClient &AsyncTcpClient::operator=(const AsyncTcpClient &other) {
         // Self-assignment check to avoid unnecessary work
         if (this == &other) {
             return *this;
@@ -119,7 +122,9 @@ namespace AsyncTcp {
     }
     int AsyncTcpClient::connect(const char *host, uint16_t port) {
         AIPAddress remote_addr;
-        if (hostByName(host, remote_addr, static_cast<int>(_ctx->getTimeout()))) { // from WiFiClient
+        if (hostByName(
+                host, remote_addr,
+                static_cast<int>(_ctx->getTimeout()))) { // from WiFiClient
             return connect(remote_addr, port);
         }
         return 0;
@@ -151,12 +156,15 @@ namespace AsyncTcp {
         _ctx->setTimeout(_timeout);
         _ctx->setOnConnectCallback([this] { _onConnectCallback(); });
         _ctx->setOnCloseCallback([this] { _onCloseCallback(); });
-        _ctx->setOnErrorCallback([this](auto &&PH1) { _onErrorCallback(std::forward<decltype(PH1)>(PH1)); });
+        _ctx->setOnErrorCallback([this](auto &&PH1) {
+            _onErrorCallback(std::forward<decltype(PH1)>(PH1));
+        });
         _ctx->setOnReceiveCallback([this](auto &&PH1) {
             _onReceiveCallback(std::forward<decltype(PH1)>(PH1));
         });
         _ctx->setOnAckCallback([this](auto &&PH1, auto &&PH2) {
-            _onAckCallback(std::forward<decltype(PH1)>(PH1), std::forward<decltype(PH2)>(PH2));
+            _onAckCallback(std::forward<decltype(PH1)>(PH1),
+                           std::forward<decltype(PH2)>(PH2));
         });
         if (const int res = _ctx->connect(ip, port); res == 0) {
             DEBUGWIRE("Client did not menage to connect.\n");
@@ -203,16 +211,14 @@ namespace AsyncTcp {
         return _ctx ? _ctx->availableForWrite() : 0;
     }
 
-    size_t AsyncTcpClient::write(uint8_t b) {
-        return write(&b, 1);
-    }
+    size_t AsyncTcpClient::write(uint8_t b) { return write(&b, 1); }
 
     size_t AsyncTcpClient::write(const uint8_t *buf, size_t size) {
         if (!_ctx || !size) {
             return 0;
         }
         _ctx->setTimeout(_timeout);
-        return _ctx->write(reinterpret_cast<const char*>(buf), size);
+        return _ctx->write(reinterpret_cast<const char *>(buf), size);
     }
 
     size_t AsyncTcpClient::write(Stream &stream) const {
@@ -241,7 +247,8 @@ namespace AsyncTcp {
     }
 
     int AsyncTcpClient::read(uint8_t *buf, size_t size) {
-        return static_cast<int>(_ctx->read(reinterpret_cast<char *>(buf), size));
+        return static_cast<int>(
+            _ctx->read(reinterpret_cast<char *>(buf), size));
     }
 
     int AsyncTcpClient::read(char *buf, size_t size) const {
@@ -262,7 +269,7 @@ namespace AsyncTcp {
         return _ctx->peekBytes(reinterpret_cast<char *>(buffer), length);
     }
 
-    const char* AsyncTcpClient::peekBuffer() const {
+    const char *AsyncTcpClient::peekBuffer() const {
         if (!_ctx) {
             return nullptr;
         }
@@ -321,9 +328,7 @@ namespace AsyncTcp {
         return _ctx->state();
     }
 
-    AsyncTcpClient::operator bool() {
-        return available() || connected();
-    }
+    AsyncTcpClient::operator bool() { return available() || connected(); }
 
     [[maybe_unused]] AIPAddress AsyncTcpClient::remoteIP() const {
         if (!_ctx || !_ctx->getRemoteAddress()) {
@@ -363,8 +368,8 @@ namespace AsyncTcp {
         }
     }
 
-
-    [[maybe_unused]] void AsyncTcpClient::stopAllExcept(AsyncTcpClient *except) {
+    [[maybe_unused]] void
+    AsyncTcpClient::stopAllExcept(AsyncTcpClient *except) {
         // Stop all will look at the lowest-level wrapper connections only
         while (except->_owned) {
             except = except->_owned;
@@ -381,7 +386,8 @@ namespace AsyncTcp {
         }
     }
 
-    void AsyncTcpClient::keepAlive(uint16_t idle_sec, uint16_t intv_sec, uint8_t count) const {
+    void AsyncTcpClient::keepAlive(uint16_t idle_sec, uint16_t intv_sec,
+                                   uint8_t count) const {
         _ctx->keepAlive(idle_sec, intv_sec, count);
     }
 
@@ -400,15 +406,18 @@ namespace AsyncTcp {
     [[maybe_unused]] uint8_t AsyncTcpClient::getKeepAliveCount() const {
         return _ctx->getKeepAliveCount();
     }
-    void AsyncTcpClient::setOnReceivedCallback(std::unique_ptr<EventBridge> worker) {
+    void
+    AsyncTcpClient::setOnReceivedCallback(std::unique_ptr<EventBridge> worker) {
         _received_callback_worker = std::move(worker);
     }
 
-    void AsyncTcpClient::setOnConnectedCallback(std::unique_ptr<EventBridge> worker) {
+    void AsyncTcpClient::setOnConnectedCallback(
+        std::unique_ptr<EventBridge> worker) {
         _connected_callback_worker = std::move(worker);
     }
 
-    void AsyncTcpClient::setOnClosedCallback(std::unique_ptr<EventBridge> worker) {
+    void
+    AsyncTcpClient::setOnClosedCallback(std::unique_ptr<EventBridge> worker) {
         _closed_callback_worker = std::move(worker);
     }
 
@@ -447,10 +456,13 @@ namespace AsyncTcp {
         }
     }
 
-    void AsyncTcpClient::_onAckCallback(struct tcp_pcb *tpcb, uint16_t len) const {
-        (void) tpcb;
-        (void) len;
-        DEBUGWIRE("AsyncTcpClient::_onAckCallback: ack callback triggered.length: %d\n", len);
+    void AsyncTcpClient::_onAckCallback(struct tcp_pcb *tpcb,
+                                        uint16_t len) const {
+        (void)tpcb;
+        (void)len;
+        DEBUGWIRE("AsyncTcpClient::_onAckCallback: ack callback "
+                  "triggered.length: %d\n",
+                  len);
         // @todo: implement later
     }
 } // namespace AsyncTcp

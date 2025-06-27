@@ -8,21 +8,19 @@
 
 namespace AsyncTcp {
 
-class WorkerBase {
+    class WorkerBase {
 
-public:
+        public:
+            /**
+             * Default destructor for `WorkerBase`.
+             */
+            virtual ~WorkerBase() = default;
 
-    /**
-     * Default destructor for `WorkerBase`.
-     */
-    virtual ~WorkerBase() = default;
+            /**
+             *
+             * @param data raw pointer
+             */
+            virtual void setPayload(void *data) = 0;
+    };
 
-    /**
-     *
-     * @param data raw pointer
-     */
-    virtual void setPayload(void* data) = 0;
-
-};
-
-} // AsyncTcp
+} // namespace AsyncTcp

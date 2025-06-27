@@ -1,11 +1,12 @@
 ### Raw Pointer Usage in AsyncTcp Library
 
-The use of raw pointers for `AsyncTcpClient` is a deliberate design choice that aligns with both the Pico SDK requirements and the client's own lifecycle management:
+The use of raw pointers for `AsyncTcpClient` is a deliberate design choice that aligns with both the Pico SDK
+requirements and the client's own lifecycle management:
 
 1. **AsyncTcpClient Lifecycle**
-   - Has built-in reference counting through `_ctx`
-   - Protected constructor with `AsyncTcpClientContext`
-   - Copy constructor manages reference counting via `_ctx->ref()`
+    - Has built-in reference counting through `_ctx`
+    - Protected constructor with `AsyncTcpClientContext`
+    - Copy constructor manages reference counting via `_ctx->ref()`
 
 2. **Client Pointer Journey**
    ```cpp
@@ -45,9 +46,11 @@ The use of raw pointers for `AsyncTcpClient` is a deliberate design choice that 
     - Work is executed under context lock, preventing race conditions
     - Clear ownership transfer through the async system
 
-This design provides a practical balance between the embedded system requirements and safe memory management, while maintaining compatibility with the Pico SDK's async context system.
+This design provides a practical balance between the embedded system requirements and safe memory management, while
+maintaining compatibility with the Pico SDK's async context system.
 
 **Object Lifecycle Diagram**
+
 ```plaintext
 [AsyncTcpClient] --owns--> [AsyncTcpClientContext]
        ^                           |
@@ -56,6 +59,7 @@ This design provides a practical balance between the embedded system requirement
 ```
 
 **Pointer Journey Flow**
+
 ```plaintext
 [Main]
    |
@@ -75,6 +79,7 @@ This design provides a practical balance between the embedded system requirement
 ```
 
 **Async Context Integration**
+
 ```plaintext
 [Core 0]                    [Core 1]
    |                           |

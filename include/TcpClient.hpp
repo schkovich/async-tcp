@@ -91,7 +91,7 @@ namespace async_tcp {
             /**
              * @brief Destructor for the AsyncTcpClient class.
              */
-            virtual TcpClient();
+            virtual ~TcpClient();
 
             /**
              * @brief Copy constructor for AsyncTcpClient.

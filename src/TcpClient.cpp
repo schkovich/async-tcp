@@ -72,7 +72,7 @@ namespace async_tcp {
         setNoDelay(defaultNoDelay);
     }
 
-    TcpClient::TcpClient() {
+    TcpClient::~TcpClient() {
         _remove(this);
         if (_ctx) {
             _ctx->unref();
@@ -165,6 +165,7 @@ namespace async_tcp {
             _onAckCallback(std::forward<decltype(PH1)>(PH1),
                            std::forward<decltype(PH2)>(PH2));
         });
+
         if (const int res = _ctx->connect(ip, port); res == 0) {
             DEBUGWIRE("Client did not menage to connect.\n");
             _ctx->unref();

@@ -92,7 +92,7 @@ namespace async_tcp {
                 return err;
             }
 
-            TcpClientContext() = default;
+            ~AsyncTcpClientContext() = default;
 
             [[nodiscard]] AsyncTcpClientContext *next() const { return _next; }
 

@@ -70,7 +70,7 @@ namespace AsyncTcp {
      * and resource management, which is crucial in environments where exceptions are not used.
      */
     bool ContextManager::initDefaultContext(async_context_threadsafe_background_config_t& config) {
-        if (false == initiated) {
+        if (!initiated) {
             if (async_context_threadsafe_background_init(m_context, &config)) {
                 initiated = true;
                 return true;

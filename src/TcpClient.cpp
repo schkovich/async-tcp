@@ -455,12 +455,10 @@ namespace async_tcp {
     }
 
     void TcpClient::_onAckCallback(struct tcp_pcb *tpcb,
-                                        uint16_t len) const {
+                                     uint16_t len) const {
+        // Ack callback stub - no-op to prevent debug clutter
         (void)tpcb;
         (void)len;
-        DEBUGWIRE("TcpClient::_onAckCallback: ack callback "
-                  "triggered.length: %d\n",
-                  len);
         // @todo: implement later
     }
 } // namespace AsyncTcp

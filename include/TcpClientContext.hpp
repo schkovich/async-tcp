@@ -143,8 +143,8 @@ namespace async_tcp {
                 if (!_pcb) {
                     DEBUGWIRE(":cabrt\n");
                     return 0;
-                    return 0;
                 }
+                DEBUGWIRE(":conn\n");
                 return 1;
             }
 
@@ -299,6 +299,7 @@ namespace async_tcp {
 
                 return size_read;
             }
+
             /**
              * @brief A group of functions for non-consuming inspection and
              * controlled consumption of received data
@@ -556,6 +557,12 @@ namespace async_tcp {
             }
 
         protected:
+            // store pending write buffers for async scheduling
+            const char* _datasource = nullptr;
+            size_t _datalen = 0;
+            // timestamp when the first write chunk was scheduled
+            uint32_t _write_start_time = 0;
+
             /**
              * @brief Checks if the operation has timed out based on a given
              * start time
@@ -593,30 +600,20 @@ namespace async_tcp {
              * or connection becomes invalid.
              */
             size_t _write_from_source(const char *ds, const size_t dl) {
-                size_t written = 0;
-                uint32_t op_start_time = millis();
-
-                do {
-                    if (_write_some(ds, dl, &written)) {
-                        op_start_time = millis();
-                    }
-
-                    if (written == dl || _is_timeout(op_start_time) ||
-                        !_is_connection_valid()) {
-                        if (_is_timeout(op_start_time)) {
-                            DEBUGWIRE(":wtmo\n");
-                        } else if (!_is_connection_valid()) {
-                            DEBUGWIRE("Operation aborted ;)\n");
-                        }
-                        break;
-                    }
-                } while (true);
-
-                if (_sync) {
-                    wait_until_acked();
+                // schedule initial write and save state for async continuation
+                _datasource = ds;
+                _datalen = dl;
+                _written = 0;
+                // record write start for timeout
+                _write_start_time = millis();
+                bool ok = _write_some(_datasource, _datalen, &_written);
+                if (!ok) {
+                    // nothing sent, abort scheduling
+                    _datasource = nullptr;
+                    _datalen = 0;
+                    return 0;
                 }
-
-                return written;
+                return _written;
             }
 
             /**
@@ -645,8 +642,10 @@ namespace async_tcp {
              */
             [[nodiscard]] size_t _calculate_chunk_size(const size_t remaining,
                                                        const int scale) const {
+                auto sbuf = static_cast<size_t>(tcp_sndbuf(_pcb));
+                DEBUGWIRE(":sbuf %d, rem %d, scale %d\n", sbuf, remaining, scale);
                 size_t chunk_size =
-                    std::min(static_cast<size_t>(tcp_sndbuf(_pcb)), remaining);
+                    std::min(sbuf, remaining);
 
                 if (chunk_size > static_cast<size_t>(1 << scale)) {
                     chunk_size >>= scale;
@@ -756,11 +755,26 @@ namespace async_tcp {
             err_t _acked(tcp_pcb *pcb, uint16_t len) {
                 (void)pcb;
                 (void)len;
-                DEBUGWIRE(":ack %d\n", len);
-                //        _write_some_from_cb();
+                // advance acked count and notify
                 _written += len;
-                //        tcp_recved(pcb, len);
                 _ackCb(pcb, len);
+                // reset timeout on progress
+                if (len > 0) {
+                    _write_start_time = millis();
+                }
+                // schedule next chunk if data remains
+                if (_datasource && _written < _datalen) {
+                    bool ok = _write_some(_datasource, _datalen, &_written);
+                    if (!ok) {
+                        _errorCb(ERR_MEM);
+                        _datasource = nullptr;
+                        _datalen = 0;
+                    }
+                } else {
+                    // all data sent
+                    _datasource = nullptr;
+                    _datalen = 0;
+                }
                 return ERR_OK;
             }
 
@@ -845,7 +859,27 @@ namespace async_tcp {
                 return ERR_OK;
             }
 
-            err_t _poll(tcp_pcb *) { return ERR_OK; }
+            err_t _poll(tcp_pcb *pcb) {
+                // check for pending write and timeout
+                if (_datasource && _written < _datalen) {
+                    if (millis() - _write_start_time > _timeout_ms) {
+                        // write timed out, notify application
+                        _errorCb(ERR_TIMEOUT);
+                        // abort pending write
+                        _datasource = nullptr;
+                        _datalen = 0;
+                    } else {
+                        // continue sending next chunk
+                        bool ok = _write_some(_datasource, _datalen, &_written);
+                        if (!ok) {
+                            _errorCb(ERR_MEM);
+                            _datasource = nullptr;
+                            _datalen = 0;
+                        }
+                    }
+                }
+                return ERR_OK;
+            }
 
             // We may receive a nullptr as arg in the case when an IRQ happens
             // during a shutdown sequence In that case, just ignore the CB
@@ -896,7 +930,7 @@ namespace async_tcp {
             }
 
         private:
-            tcp_pcb *_pcb;
+             tcp_pcb *_pcb;
 
             pbuf *_rx_buf;
             size_t _rx_buf_offset;

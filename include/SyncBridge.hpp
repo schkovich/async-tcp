@@ -21,7 +21,13 @@ namespace async_tcp {
             virtual ~SyncPayload() noexcept = default;
     };
 
-    extern "C" uint32_t executor_bridging_function(void *bridgingArgsPtr);
+    /**
+     * @typedef SyncPayloadPtr
+     * @brief Convenience alias for a unique pointer to a SyncPayload
+     */
+    using SyncPayloadPtr = std::unique_ptr<SyncPayload>;
+
+    extern "C" void sync_handler(async_context_t *context, async_when_pending_worker_t *worker);
 
     /**
      * @class SyncBridge
@@ -51,6 +57,9 @@ namespace async_tcp {
     class SyncBridge {
 
             const ContextManagerPtr &m_ctx;
+            PerpetualWorker m_worker = {};
+            semaphore_t m_semaphore = {};
+            mutex_t m_execution_mutex = {}; // Serialize access to execution
 
             /**
              * @brief Abstract method that defines the resource-specific
@@ -60,8 +69,7 @@ namespace async_tcp {
              * containing operation data
              * @return uint32_t Result code from the operation
              */
-            virtual uint32_t
-            onExecute(std::unique_ptr<SyncPayload> payload) = 0;
+            virtual uint32_t onExecute(SyncPayloadPtr payload) = 0;
 
         protected:
             /**
@@ -76,9 +84,10 @@ namespace async_tcp {
              * containing operation data
              * @return uint32_t Result code from the operation
              */
-            uint32_t doExecute(std::unique_ptr<SyncPayload> payload);
+            uint32_t doExecute(SyncPayloadPtr payload);
 
-            friend uint32_t executor_bridging_function(void *bridgingArgsPtr);
+            friend void sync_handler(async_context_t *context,
+                                         async_when_pending_worker_t *worker);
 
         public:
             /**
@@ -87,6 +96,13 @@ namespace async_tcp {
              * @param ctx Reference to a shared context manager pointer
              */
             explicit SyncBridge(const ContextManagerPtr &ctx) : m_ctx(ctx) {}
+
+            void initialize() {
+                m_worker.setHandler(sync_handler);
+                m_ctx->addWorker(m_worker);
+                sem_init(&m_semaphore, 0, 1);
+                mutex_init(&m_execution_mutex);
+            }
 
             /**
              * @brief Virtual destructor to allow proper cleanup in derived
@@ -108,27 +124,20 @@ namespace async_tcp {
              * containing operation data
              * @return uint32_t Result code from the operation
              */
-            virtual uint32_t execute(std::unique_ptr<SyncPayload> payload);
+            virtual uint32_t execute(SyncPayloadPtr payload);
     };
 
     /**
-     * @struct BridgingArgs
-     * @brief Internal structure that packages a SyncBridge with its payload for
-     * execution
+     * @struct ExecutionContext
+     * @brief Per-execution context that holds payload and result
      *
-     * This structure allows passing both the bridge instance and its payload
-     * through the C-style bridging function interface required by the execution
-     * context.
+     * This structure is allocated per execution call to avoid race conditions
+     * when multiple threads call execute() on the same SyncBridge instance.
      */
-    struct BridgingArgs {
-            SyncBridge *bridge{};
-            std::unique_ptr<SyncPayload> payload{};
+    struct ExecutionContext {
+        SyncBridge* bridge{nullptr};
+        SyncPayloadPtr payload{};
+        uint32_t result{0};
     };
-
-    /**
-     * @typedef SyncPayloadPtr
-     * @brief Convenience alias for a unique pointer to a SyncPayload
-     */
-    using SyncPayloadPtr = std::unique_ptr<SyncPayload>;
 
 } // namespace AsyncTcp

@@ -28,7 +28,7 @@ namespace async_tcp {
      * @return uint32_t Result code from the operation execution
      */
     uint32_t
-    SyncBridge::doExecute(std::unique_ptr<SyncPayload> payload) { // NOLINT
+    SyncBridge::doExecute(SyncPayloadPtr payload) { // NOLINT
         return onExecute(std::move(payload));
     }
 
@@ -44,28 +44,38 @@ namespace async_tcp {
      * @param payload Unique pointer to operation data
      * @return uint32_t Result code from the operation execution
      */
-    uint32_t SyncBridge::execute(std::unique_ptr<SyncPayload> payload) {
-        auto *args = new BridgingArgs{this, std::move(payload)};
-        return m_ctx->execWorkSynchronously(&executor_bridging_function, args);
+    uint32_t SyncBridge::execute(SyncPayloadPtr payload) {
+        // Serialize access to the worker - only one execution at a time
+        mutex_enter_blocking(&m_execution_mutex);
+
+        auto* exec_ctx = new ExecutionContext{
+            this,
+            std::move(payload),
+            0
+        };
+
+        m_worker.setPayload(exec_ctx);  // Pass ExecutionContext as user_data
+        m_ctx->setWorkPending(m_worker);
+        sem_acquire_blocking(&m_semaphore);  // Wait for original semaphore
+
+        // Get result and cleanup
+        uint32_t result = exec_ctx->result;
+        delete exec_ctx;
+
+        mutex_exit(&m_execution_mutex);  // Release serialization lock
+        return result;
     }
 
-    /**
-     * @brief C-style bridging function that translates between the context
-     * system and SyncBridge
-     *
-     * This function accepts a void pointer to bridging arguments, performs type
-     * restoration, delegates to the appropriate SyncBridge instance, and
-     * handles cleanup of temporary objects. It serves as the adapter between
-     * the C-style callback interface and the C++ object model.
-     *
-     * @param bridgingArgsPtr Void pointer to a BridgingArgs structure
-     * @return uint32_t Result code from the execution
-     */
-    extern "C" uint32_t executor_bridging_function(void *bridgingArgsPtr) {
-        auto *args = static_cast<BridgingArgs *>(bridgingArgsPtr);
-        const auto result = args->bridge->doExecute(std::move(args->payload));
-        delete args;
-        return result;
+    extern "C" void sync_handler(async_context_t *context,
+                      async_when_pending_worker_t *worker) {
+        (void) context; // Unused in this implementation
+        auto *exec_ctx = static_cast<ExecutionContext *>(worker->user_data);
+
+        // Execute the work
+        exec_ctx->result = exec_ctx->bridge->doExecute(std::move(exec_ctx->payload));
+
+        // Signal completion using the original semaphore
+        sem_release(&exec_ctx->bridge->m_semaphore);
     }
 
 } // namespace AsyncTcp

@@ -46,7 +46,18 @@ namespace async_tcp {
      */
     uint32_t SyncBridge::execute(SyncPayloadPtr payload) {
         // Serialize access to the worker - only one execution at a time
-        mutex_enter_blocking(&m_execution_mutex);
+        recursive_mutex_enter_blocking(&m_execution_mutex);
+
+        // Check if THIS specific bridge is already executing on this thread
+        if (m_executing) {
+            // Re-entrant call - execute directly without semaphore
+            uint32_t result = onExecute(std::move(payload));
+            recursive_mutex_exit(&m_execution_mutex);
+            return result;
+        }
+
+        // First-level call - use semaphore mechanism
+        m_executing = true;
 
         auto* exec_ctx = new ExecutionContext{
             this,
@@ -62,7 +73,8 @@ namespace async_tcp {
         uint32_t result = exec_ctx->result;
         delete exec_ctx;
 
-        mutex_exit(&m_execution_mutex);  // Release serialization lock
+        m_executing = false;  // Clear when done
+        recursive_mutex_exit(&m_execution_mutex);  // Release serialization lock
         return result;
     }
 

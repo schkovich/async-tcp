@@ -56,10 +56,11 @@ namespace async_tcp {
      */
     class SyncBridge {
 
-            const ContextManagerPtr &m_ctx;
-            PerpetualWorker m_worker = {};
-            semaphore_t m_semaphore = {};
-            mutex_t m_execution_mutex = {}; // Serialize access to execution
+            const ContextManagerPtr &m_ctx;        ///< Context manager for execution
+            PerpetualWorker m_worker;       ///< Worker for async operations
+            semaphore_t m_semaphore = {};   ///< Semaphore for synchronization
+            recursive_mutex_t m_execution_mutex = {}; // Serialize access to execution
+            volatile bool m_executing = false;  ///< Track if this instance is currently executing
 
             /**
              * @brief Abstract method that defines the resource-specific
@@ -101,7 +102,7 @@ namespace async_tcp {
                 m_worker.setHandler(sync_handler);
                 m_ctx->addWorker(m_worker);
                 sem_init(&m_semaphore, 0, 1);
-                mutex_init(&m_execution_mutex);
+                recursive_mutex_init(&m_execution_mutex);
             }
 
             /**
@@ -139,5 +140,6 @@ namespace async_tcp {
         SyncPayloadPtr payload{};
         uint32_t result{0};
     };
+
 
 } // namespace AsyncTcp

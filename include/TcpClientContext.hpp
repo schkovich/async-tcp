@@ -42,8 +42,8 @@ namespace async_tcp {
                                   void *discard_cb_arg)
                 : _pcb(pcb), _rx_buf(nullptr), _rx_buf_offset(0),
                   _discard_cb(discard_cb), _discard_cb_arg(discard_cb_arg),
-                  _ref_cnt(0), _next(nullptr),
-                  _sync(TcpClient::getDefaultSync()) {
+                  _ref_cnt(0), _next(nullptr) {
+                // Removed _sync initialization - sync mode is redundant and dangerous
                 tcp_setprio(_pcb, TCP_PRIO_MIN);
                 tcp_arg(_pcb, this);
                 tcp_recv(_pcb, &_s_recv);
@@ -530,9 +530,6 @@ namespace async_tcp {
                 return isKeepAliveEnabled() ? _pcb->keep_cnt : 0;
             }
 
-            [[nodiscard]] bool getSync() const { return _sync; }
-
-            void setSync(const bool sync) { _sync = sync; }
 
             void setOnConnectCallback(const std::function<void()> &cb) {
                 _connectCb = cb; // Set the success callback
@@ -668,12 +665,9 @@ namespace async_tcp {
             [[nodiscard]] uint8_t
             _get_write_flags(const size_t chunk_size,
                              const size_t remaining) const {
-                uint8_t flags = 0;
+                uint8_t flags = TCP_WRITE_FLAG_COPY;  // Always copy data for safety
                 if (chunk_size < remaining) {
                     flags |= TCP_WRITE_FLAG_MORE;
-                }
-                if (!_sync) {
-                    flags |= TCP_WRITE_FLAG_COPY;
                 }
                 return flags;
             }
@@ -949,6 +943,5 @@ namespace async_tcp {
             std::function<void(std::unique_ptr<int>)> _receiveCb;
             std::function<void(struct tcp_pcb *tpcb, uint16_t len)> _ackCb;
             std::function<void()> _closeCb;
-            bool _sync;
     };
 } // namespace AsyncTcp

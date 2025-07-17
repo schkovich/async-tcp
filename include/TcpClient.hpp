@@ -352,9 +352,8 @@ namespace async_tcp {
             }
 
             // default NoDelay=False (Nagle=True=!NoDelay)
-            // Nagle is for shortly delaying outgoing data, to send less/bigger
-            // packets Nagle should be disabled for telnet-like/interactive
-            // streams Nagle is meaningless/ignored when Sync=true
+            // Nagle is for shortly delaying outgoing data, to send less/bigger packets
+            // Nagle should be disabled for telnet-like/interactive streams
             [[maybe_unused]] static void setDefaultNoDelay(bool noDelay);
 
             [[maybe_unused]] static bool getDefaultNoDelay();
@@ -362,18 +361,6 @@ namespace async_tcp {
             [[maybe_unused]] [[nodiscard]] bool getNoDelay() const;
 
             void setNoDelay(bool no_delay) const;
-
-            // default Sync=false
-            // When sync is true, all writes are automatically flushed.
-            // This is slower but also does not allocate
-            // temporary memory for sending data
-            [[maybe_unused]] static void setDefaultSync(bool sync);
-
-            [[maybe_unused]] static bool getDefaultSync();
-
-            [[maybe_unused]] [[nodiscard]] bool getSync() const;
-
-            void setSync(bool sync) const;
 
             void setOnReceivedCallback(std::unique_ptr<EventBridge> worker);
             void setOnConnectedCallback(std::unique_ptr<EventBridge> worker);
@@ -384,7 +371,6 @@ namespace async_tcp {
             std::unique_ptr<EventBridge> _connected_callback_worker;
             std::unique_ptr<EventBridge> _closed_callback_worker;
 
-            inline static bool defaultSync = true;
 
             TcpClientContext *_ctx;
 

@@ -38,22 +38,13 @@ namespace async_tcp {
     uint16_t TcpClient::_localPort = 0;
 
     static bool defaultNoDelay = true; // false == Nagle enabled by default
-    static bool defaultSync = false;   // @todo: clarify if this is used
 
     [[maybe_unused]] void TcpClient::setDefaultNoDelay(const bool noDelay) {
         defaultNoDelay = noDelay;
     }
 
-    [[maybe_unused]] void TcpClient::setDefaultSync(const bool sync) {
-        defaultSync = sync;
-    }
-
     [[maybe_unused]] bool TcpClient::getDefaultNoDelay() {
         return defaultNoDelay;
-    }
-
-    [[maybe_unused]] bool TcpClient::getDefaultSync() {
-        return defaultSync;
     }
 
     TcpClient::TcpClient() : _ctx(nullptr), _owned(nullptr) {
@@ -68,7 +59,6 @@ namespace async_tcp {
 
         _add(this);
 
-        setSync(defaultSync);
         setNoDelay(defaultNoDelay);
     }
 
@@ -173,7 +163,6 @@ namespace async_tcp {
             return 0;
         }
 
-        setSync(defaultSync);
         setNoDelay(defaultNoDelay);
 
         return 1;
@@ -191,20 +180,6 @@ namespace async_tcp {
             return false;
         }
         return _ctx->getNoDelay();
-    }
-
-    void TcpClient::setSync(const bool sync) const {
-        if (!_ctx) {
-            return;
-        }
-        _ctx->setSync(sync);
-    }
-
-    [[maybe_unused]] bool TcpClient::getSync() const {
-        if (!_ctx) {
-            return false;
-        }
-        return _ctx->getSync();
     }
 
     int TcpClient::availableForWrite() {

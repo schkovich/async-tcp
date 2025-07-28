@@ -182,6 +182,19 @@ namespace async_tcp {
              */
             virtual ~EventBridge() = 0;
 
+            void initialisePerpetualBridge() {
+                m_perpetual_worker.setHandler(&perpetual_bridging_function);
+                // Store a direct pointer to this EventBridge instance
+                m_perpetual_worker.setPayload(this);
+                m_ctx->addWorker(m_perpetual_worker);
+            }
+
+            void initialiseEphemeralBridge() {
+                m_ephemeral_worker.setHandler(&ephemeral_bridging_function);
+                // Store a direct pointer to this EventBridge instance
+                m_ephemeral_worker.setPayload(this);
+            }
+
             /**
              * @brief Marks the persistent worker as having pending work to be
              * executed.

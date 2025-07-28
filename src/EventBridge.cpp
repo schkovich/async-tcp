@@ -40,17 +40,7 @@ namespace async_tcp {
      * @param ctx Shared pointer to the context manager that will execute this
      * worker
      */
-    EventBridge::EventBridge(const ContextManagerPtr &ctx) : m_ctx(ctx) {
-        m_perpetual_worker = PerpetualWorker();
-        m_perpetual_worker.setHandler(&perpetual_bridging_function);
-        // Store a direct pointer to this EventBridge instance
-        m_perpetual_worker.setPayload(this);
-        m_ctx->addWorker(m_perpetual_worker);
-        m_ephemeral_worker = EphemeralWorker();
-        m_ephemeral_worker.setHandler(&ephemeral_bridging_function);
-        // Store a direct pointer to this EventBridge instance
-        m_ephemeral_worker.setPayload(this);
-    }
+    EventBridge::EventBridge(const ContextManagerPtr &ctx) : m_ctx(ctx) {}
 
     /**
      * @brief Destructor that handles cleanup based on worker type.

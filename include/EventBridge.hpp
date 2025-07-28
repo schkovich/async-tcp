@@ -8,15 +8,17 @@
  * library. It provides a clean interface between the C-style async_context API
  * from the Pico SDK and object-oriented C++ event handling.
  *
- * The EventBridge implements two types of worker patterns:
+ * The EventBridge supports explicit initialization of worker types:
  *
- * 1. Persistent "when pending" workers - These remain registered with the
- * context manager until explicitly removed. Their lifecycle is typically
- * managed externally.
+ * 1. Persistent "when pending" workers - Registered via initialisePerpetualBridge().
+ *    These remain registered with the context manager until explicitly removed.
+ *    Their lifecycle is managed externally and registration is no longer automatic
+ *    in the constructor.
  *
- * 2. Ephemeral "at time" workers - These execute once at a specific time and
- * are automatically removed from the context manager after execution. They can
- * optionally manage their own lifecycle through self-ownership.
+ * 2. Ephemeral "at time" workers - Registered via initialiseEphemeralBridge().
+ *    These execute once at a specific time and are automatically removed from the
+ *    context manager after execution. They can optionally manage their own lifecycle
+ *    through self-ownership.
  *
  * The EventBridge follows the Template Method pattern, managing the
  * registration and lifecycle of workers with the async context while providing
@@ -25,7 +27,7 @@
  *
  * Key features:
  * - Thread-safe execution with core affinity guarantees
- * - Automatic worker registration and cleanup
+ * - Explicit worker registration and cleanup
  * - Support for self-managed lifecycle for ephemeral workers
  * - Clean separation between async mechanism and business logic
  *
@@ -56,13 +58,15 @@ namespace async_tcp {
      * The `EventBridge` class provides a foundation for implementing event
      * handlers with proper core affinity. It supports two types of workers:
      *
-     * 1. Persistent "when pending" workers - These remain registered with the
-     * context manager until explicitly removed. Their lifecycle is typically
-     * managed externally.
+     * 1. Persistent "when pending" workers - Registered via
+     * initialisePerpetualBridge(). These remain registered with the context
+     * manager until explicitly removed. Their lifecycle is managed externally and
+     * registration is no longer automatic in the constructor.
      *
-     * 2. Ephemeral "at time" workers - These execute once at a specific time
-     * and are automatically removed from the context manager after execution.
-     * They can optionally manage their own lifecycle through self-ownership.
+     * 2. Ephemeral "at time" workers - Registered via initialiseEphemeralBridge().
+     * These execute once at a specific time and are automatically removed from the
+     * context manager after execution. They can optionally manage their own
+     * lifecycle through self-ownership.
      *
      * This class follows the Template Method pattern, where `doWork()` is the
      * template method that defines the algorithm structure, and `onWork()` is

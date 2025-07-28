@@ -3,23 +3,18 @@
  * @brief Implementation of the EventBridge class for bridging between C-style
  * async context and C++ event handling.
  *
- * This file implements the EventBridge class which provides a foundation for
- * event handlers with proper core affinity. It supports two types of workers:
+ * This file implements the EventBridge class, which provides a foundation for event handlers with proper core affinity in the AsyncTcpClient library.
+ * It supports explicit initialization and registration of worker types:
  *
- * 1. Persistent "when pending" workers - These remain registered with the
- * context manager until explicitly removed. Their lifecycle is typically
- * managed externally.
+ * 1. Persistent "when pending" workers - Registered via initialisePerpetualBridge().
+ *    These remain registered with the context manager until explicitly removed. Registration is no longer automatic in the constructor.
  *
- * 2. Ephemeral "at time" workers - These execute once at a specific time and
- * are automatically removed from the context manager after execution. They can
- * optionally manage their own lifecycle through self-ownership.
+ * 2. Ephemeral "at time" workers - Registered via initialiseEphemeralBridge().
+ *    These execute once at a specific time and are automatically removed from the context manager after execution. They can optionally manage their own lifecycle through self-ownership.
  *
- * The implementation handles:
- * - Worker creation and registration with the context manager
- * - Setting up the bridging functions for C to C++ callbacks
- * - Proper cleanup when the EventBridge is destroyed
- * - Triggering work execution with core affinity guarantees
- * - Queue monitoring for performance analysis
+ * The implementation manages worker registration, lifecycle, and event execution, following the Template Method pattern. It provides thread-safe execution with core affinity guarantees and a clean separation between async mechanisms and business logic.
+ *
+ * @ingroup AsyncTCPClient
  */
 
 #include <Arduino.h>

@@ -13,8 +13,11 @@
  */
 
 #include "SyncBridge.hpp"
+#include <atomic>
 
 namespace async_tcp {
+
+std::atomic<bool> SyncBridge::executing_flag{false};
 
     /**
      * @brief Internal execution method that delegates to the derived class
@@ -45,19 +48,13 @@ namespace async_tcp {
      * @return uint32_t Result code from the operation execution
      */
     uint32_t SyncBridge::execute(SyncPayloadPtr payload) {
-        // Serialize access to the worker - only one execution at a time
-        recursive_mutex_enter_blocking(&m_execution_mutex);
-
-        // Check if THIS specific bridge is already executing on this thread
-        if (m_executing) {
-            // Re-entrant call - execute directly without semaphore
-            uint32_t result = onExecute(std::move(payload));
-            recursive_mutex_exit(&m_execution_mutex);
-            return result;
+        bool expected = false;
+        // Use class static member for re-entrancy guard
+        if (!executing_flag.compare_exchange_strong(expected, true, std::memory_order_acquire)) {
+            // Already executing, return error or handle contention
+            return PICO_ERROR_RESOURCE_IN_USE;
         }
-
-        // First-level call - use semaphore mechanism
-        m_executing = true;
+        recursive_mutex_enter_blocking(&m_execution_mutex);
 
         auto* exec_ctx = new ExecutionContext{
             this,
@@ -73,8 +70,8 @@ namespace async_tcp {
         uint32_t result = exec_ctx->result;
         delete exec_ctx;
 
-        m_executing = false;  // Clear when done
         recursive_mutex_exit(&m_execution_mutex);  // Release serialization lock
+        executing_flag.store(false, std::memory_order_release);
         return result;
     }
 

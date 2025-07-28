@@ -2,6 +2,7 @@
 
 #include "ContextManager.hpp"
 #include <memory>
+#include <atomic>
 
 namespace async_tcp {
 
@@ -126,6 +127,8 @@ namespace async_tcp {
              * @return uint32_t Result code from the operation
              */
             virtual uint32_t execute(SyncPayloadPtr payload);
+
+            static std::atomic<bool> executing_flag; ///< Global re-entrancy guard
     };
 
     /**

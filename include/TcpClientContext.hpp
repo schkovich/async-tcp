@@ -419,7 +419,7 @@ namespace async_tcp {
                         static_cast<uint32_t>(max_wait_ms)) {
                         // wait until sent: timeout
                         DEBUGWIRE(":wustmo\n");
-                        // All data was not flushed, timeout hit
+                        // All data not flushed, timeout hit
                         return false;
                     }
 
@@ -498,6 +498,51 @@ namespace async_tcp {
                 return sent;
             }
 
+            /**
+             * @brief Write a single chunk directly to TCP connection
+             *
+             * This method bypasses _write_from_source and _write_some completely,
+             * directly calling tcp_write() for a single chunk. Used by the new
+             * worker-based write system.
+             *
+             * @param data Pointer to binary data to write
+             * @param size Size of data chunk
+             */
+            void writeChunk(const uint8_t* data, size_t size) {
+                if (!_pcb) {
+                    // No PCB — connection not established or closed
+                    _errorCb(ERR_CONN);
+                    return;
+                }
+
+                if (!data || size == 0) {
+                    // Invalid parameters
+                    _errorCb(PICO_ERROR_INVALID_ARG);
+                    return;
+                }
+
+                // Calculate chunk size.
+                auto sbuf = static_cast<size_t>(tcp_sndbuf(_pcb));
+                auto chunk_size = std::min(sbuf, size);
+
+                if (chunk_size == 0) {
+                    // Buffer space not available — this constitutes an ERR_MEM condition.
+                    _errorCb(ERR_MEM);
+                    return;
+                }
+
+                // Direct tcp_write call
+                const auto err = tcp_write(_pcb, data, chunk_size, 0);
+
+                if (err != ERR_OK) {
+                    // Error - notify integration layer via callback
+                    _errorCb(err);
+                    return;
+                }
+
+                tcp_output(_pcb); // Ensure data is sent immediately
+            }
+
             void
             keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC,
                       uint16_t intv_sec = TCP_DEFAULT_KEEP_ALIVE_INTERVAL_SEC,
@@ -551,6 +596,14 @@ namespace async_tcp {
 
             void setOnCloseCallback(const std::function<void()> &cb) {
                 _closeCb = cb;
+            }
+
+            void setOnWrittenCallback(const std::function<void(size_t bytes_written)> &cb) {
+                _writtenCb = cb;
+            }
+
+            void setOnPollCallback(const std::function<void()> &cb) {
+                _pollCb = cb;
             }
 
         protected:
@@ -748,26 +801,10 @@ namespace async_tcp {
 
             err_t _acked(tcp_pcb *pcb, uint16_t len) {
                 (void)pcb;
-                (void)len;
-                // advance acked count and notify
-                _written += len;
-                _ackCb(pcb, len);
-                // reset timeout on progress
-                if (len > 0) {
-                    _write_start_time = millis();
-                }
-                // schedule next chunk if data remains
-                if (_datasource && _written < _datalen) {
-                    bool ok = _write_some(_datasource, _datalen, &_written);
-                    if (!ok) {
-                        _errorCb(ERR_MEM);
-                        _datasource = nullptr;
-                        _datalen = 0;
-                    }
-                } else {
-                    // all data sent
-                    _datasource = nullptr;
-                    _datalen = 0;
+                // Notify the integration layer via a callback.
+                // The integration layer (e5::TcpAckHandler) will handle the chunking policy.
+                if (_ackCb) {
+                    _ackCb(pcb, len);
                 }
                 return ERR_OK;
             }
@@ -854,23 +891,11 @@ namespace async_tcp {
             }
 
             err_t _poll(tcp_pcb *pcb) {
-                // check for pending write and timeout
-                if (_datasource && _written < _datalen) {
-                    if (millis() - _write_start_time > _timeout_ms) {
-                        // write timed out, notify application
-                        _errorCb(ERR_TIMEOUT);
-                        // abort pending write
-                        _datasource = nullptr;
-                        _datalen = 0;
-                    } else {
-                        // continue sending next chunk
-                        bool ok = _write_some(_datasource, _datalen, &_written);
-                        if (!ok) {
-                            _errorCb(ERR_MEM);
-                            _datasource = nullptr;
-                            _datalen = 0;
-                        }
-                    }
+                (void)pcb;
+
+                // Call the registered poll callback (for TcpWriter timeout checks)
+                if (_pollCb) {
+                    _pollCb();
                 }
                 return ERR_OK;
             }
@@ -943,5 +968,7 @@ namespace async_tcp {
             std::function<void(std::unique_ptr<int>)> _receiveCb;
             std::function<void(struct tcp_pcb *tpcb, uint16_t len)> _ackCb;
             std::function<void()> _closeCb;
+            std::function<void(size_t bytes_written)> _writtenCb;
+            std::function<void()> _pollCb;
     };
 } // namespace AsyncTcp

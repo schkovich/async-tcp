@@ -38,7 +38,9 @@
 #include "Client.h"
 #include "EventBridge.hpp"
 #include "Print.h"
+#include "TcpWriter.hpp"
 #include <memory>
+
 
 namespace async_tcp {
 
@@ -63,6 +65,8 @@ namespace async_tcp {
     using AIPAddress = IPAddress;
     //  Local alias for arduino::String
     using AString = String;
+
+    using TcpWriterPtr = std::unique_ptr<TcpWriter>;
 
     /**
      * @class AsyncTcpClient
@@ -272,6 +276,18 @@ namespace async_tcp {
 
             size_t write(Stream &stream) const;
 
+            /**
+             * @brief Write a single chunk directly to TCP connection.
+             *
+             * This method bypasses the blocking _write_from_source and _write_some methods,
+             * directly calling the new TcpClientContext::writeChunk() method for
+             * worker-based write operations.
+             *
+             * @param data Pointer to binary data to write
+             * @param size Size of data chunk
+             */
+            void writeChunk(const uint8_t* data, size_t size);
+
             int available() override;
 
             int read() override;
@@ -366,6 +382,17 @@ namespace async_tcp {
             void setOnConnectedCallback(std::unique_ptr<EventBridge> worker);
             void setOnClosedCallback(std::unique_ptr<EventBridge> worker);
 
+            /**
+             * @brief Set the TcpWriter for chunked write operations
+             *
+             * When a writer is set, the write() method will delegate to the writer
+             * for efficient chunking and flow control instead of using the basic
+             * synchronous write implementation. Takes ownership of the writer.
+             *
+             * @param writer Unique pointer to TcpWriter instance
+             */
+            void setWriter(TcpWriterPtr writer);
+
         protected:
             std::unique_ptr<EventBridge> _received_callback_worker;
             std::unique_ptr<EventBridge> _connected_callback_worker;
@@ -378,6 +405,8 @@ namespace async_tcp {
 
             static uint16_t _localPort;
 
+            TcpWriterPtr m_writer{};  ///< Writer for chunked operations
+
             void _onConnectCallback() const;
 
             void _onCloseCallback() const;
@@ -387,5 +416,6 @@ namespace async_tcp {
             void _onReceiveCallback(std::unique_ptr<int> size) const;
 
             void _onAckCallback(tcp_pcb *tpcb, uint16_t len) const;
+            bool checkAndHandleWriteTimeout();
     };
 } // namespace AsyncTcp

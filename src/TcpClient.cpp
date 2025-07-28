@@ -73,8 +73,7 @@ namespace async_tcp {
         return make_unique<TcpClient>(*this);
     }
 
-    TcpClient::TcpClient(const TcpClient &other)
-        : Client(other), SList(other) {
+    TcpClient::TcpClient(const TcpClient &other) {
         _ctx = other._ctx;
         _timeout = other._timeout;
         _localPort = localPort();
@@ -155,6 +154,9 @@ namespace async_tcp {
             _onAckCallback(std::forward<decltype(PH1)>(PH1),
                            std::forward<decltype(PH2)>(PH2));
         });
+        _ctx->setOnPollCallback([this] {
+            checkAndHandleWriteTimeout();
+        });
 
         if (const int res = _ctx->connect(ip, port); res == 0) {
             DEBUGWIRE("Client did not menage to connect.\n");
@@ -189,11 +191,24 @@ namespace async_tcp {
     size_t TcpClient::write(uint8_t b) { return write(&b, 1); }
 
     size_t TcpClient::write(const uint8_t *buf, size_t size) {
-        if (!_ctx || !size) {
-            return 0;
+        assert(_ctx && "TcpClient context must be valid");
+        assert(size > 0 && "Write size must be non-zero");
+        assert(m_writer && "TcpWriter must be configured for async operations");
+
+        // Atomically check if no write is in progress and set it to true if so
+        bool expected = false;
+        if (!m_writer->tryStartWrite(expected)) {
+            DEBUGWIRE("[TcpClient] Write operation already in progress, rejecting new write\n");
+            return PICO_ERROR_RESOURCE_IN_USE;
         }
-        _ctx->setTimeout(_timeout);
-        return _ctx->write(reinterpret_cast<const char *>(buf), size);
+
+        // Delegate directly to TcpWriter - this is the only path in async architecture
+        m_writer->write(buf, size);
+
+        // @deprecated: size_t return is legacy from sync API
+        // In async operations, write completion should be handled via callbacks
+        // Always return requested size - actual success/failure handled asynchronously
+        return PICO_OK;
     }
 
     size_t TcpClient::write(Stream &stream) const {
@@ -202,6 +217,13 @@ namespace async_tcp {
         }
         _ctx->setTimeout(_timeout);
         return _ctx->write(stream);
+    }
+
+    void TcpClient::writeChunk(const uint8_t* data, size_t size) {
+        if (!_ctx || !data || size == 0) {
+            return;
+        }
+        _ctx->writeChunk(data, size);
     }
 
     int TcpClient::available() {
@@ -417,8 +439,8 @@ namespace async_tcp {
 
     void TcpClient::_onErrorCallback(err_t err) {
         DEBUGWIRE("The ctx failed with the error code: %d", err);
-        _ctx->close();
-        _ctx = nullptr;
+        // TODO: Implement proper error handling based on error type
+        // instead of always closing the connection
     }
 
     void TcpClient::_onReceiveCallback(std::unique_ptr<int> size) const {
@@ -431,9 +453,27 @@ namespace async_tcp {
 
     void TcpClient::_onAckCallback(struct tcp_pcb *tpcb,
                                      uint16_t len) const {
-        // Ack callback stub - no-op to prevent debug clutter
-        (void)tpcb;
-        (void)len;
-        // @todo: implement later
+        (void)tpcb;  // PCB parameter not needed
+
+        // If writer is configured, delegate ACK handling to it
+        if (m_writer) {
+            m_writer->onAckReceived(len);
+        } else {
+            DEBUGWIRE("TcpClient::_onAckCallback: ACK received for %u bytes but no writer configured\n", len);
+        }
+    }
+
+    void TcpClient::setWriter(TcpWriterPtr writer) {
+        m_writer = std::move(writer);
+    }
+
+    bool TcpClient::checkAndHandleWriteTimeout() {
+
+        if (m_writer && m_writer->hasTimedOut()) {
+            m_writer->onWriteTimeout();
+            return true;  // Timeout was detected and handled
+        }
+
+        return false;  // No timeout
     }
 } // namespace AsyncTcp

@@ -40,9 +40,10 @@ namespace async_tcp {
      * @param context Reference to the background context structure to be
      * managed
      */
-    ContextManager::ContextManager(
-        async_context_threadsafe_background_t &context)
-        : m_context(&context), m_context_core(&context.core) {}
+    ContextManager::ContextManager()
+        : m_context() {
+        m_context_core = &m_context.core; // Set the core context reference
+    }
 
     /**
      * @brief Destructor that deinitializes the background asynchronous context.
@@ -57,10 +58,8 @@ namespace async_tcp {
      */
     ContextManager::~ContextManager() {
         if (initiated) {
-            // Deinitialize the thread-safe background context
             async_context_deinit(m_context_core);
             m_context_core = nullptr;
-            m_context = {};
             initiated = false;
         }
     }
@@ -89,7 +88,7 @@ namespace async_tcp {
     bool ContextManager::initDefaultContext(
         async_context_threadsafe_background_config_t &config) {
         if (!initiated) {
-            if (async_context_threadsafe_background_init(m_context, &config)) {
+            if (async_context_threadsafe_background_init(&m_context, &config)) {
                 initiated = true;
                 return true;
             }
@@ -111,7 +110,7 @@ namespace async_tcp {
      * is invalid or addition failed
      */
     bool ContextManager::addWorker(PerpetualWorker &worker) const {
-        if (!m_context_core) {
+        if (!initiated) {
             return false;
         }
         if (!async_context_add_when_pending_worker(m_context_core,
@@ -142,31 +141,25 @@ namespace async_tcp {
      */
     bool ContextManager::addWorker(EphemeralWorker &worker,
                                    const uint32_t delay) const {
-
-        if (!m_context_core) {
+        if (!initiated) {
             DEBUGV("ContextManager::addWorker - no context!\n");
             return false;
         }
-
         const auto worker_ptr = worker.getWorker();
-
         if (worker_ptr->do_work == nullptr) {
             DEBUGV(
                 "ContextManager::addWorker - handler function not defined!\n");
             return false;
         }
-
         if (worker_ptr->user_data == nullptr) {
             DEBUGV("ContextManager::addWorker - no user data set!\n");
             return false;
         }
-
         if (!async_context_add_at_time_worker_in_ms(m_context_core, worker_ptr,
                                                     delay)) {
             DEBUGV("ContextManager::addWorker - Failed to add worker!\n");
             return false;
         }
-
         return true;
     }
 
@@ -181,18 +174,16 @@ namespace async_tcp {
      * is invalid or removal failed
      */
     bool ContextManager::removeWorker(PerpetualWorker &worker) const {
-        if (!m_context_core) {
+        if (!initiated) {
             DEBUGV("ContextManager::removeWorker - no context!\n");
             return false;
         }
-
         if (!async_context_remove_when_pending_worker(m_context_core,
                                                       worker.getWorker())) {
             DEBUGV("ContextManager::removeWorker - Failed to remove when "
                    "pending worker!\n");
             return false;
         }
-
         return true;
     }
 
@@ -209,17 +200,15 @@ namespace async_tcp {
      * is invalid or removal failed
      */
     bool ContextManager::removeWorker(EphemeralWorker &worker) const {
-        if (!m_context_core) {
+        if (!initiated) {
             return false;
         }
-
         if (!async_context_remove_at_time_worker(m_context_core,
                                                  worker.getWorker())) {
             DEBUGV("ContextManager::removeWorker(Worker &worker) - Failed to "
                    "remove at time worker!\n");
             return false;
         }
-
         return true;
     }
 
@@ -233,7 +222,7 @@ namespace async_tcp {
      * @param worker Reference to the PerpetualWorker instance to be signaled
      */
     void ContextManager::setWorkPending(PerpetualWorker &worker) const {
-        if (m_context_core) {
+        if (initiated) {
             async_context_set_work_pending(m_context_core, worker.getWorker());
         }
     }
@@ -248,7 +237,7 @@ namespace async_tcp {
      * @warning Always pair this with a releaseLock() call to prevent deadlocks
      */
     void ContextManager::acquireLock() const {
-        if (m_context_core) {
+        if (initiated) {
             async_context_acquire_lock_blocking(m_context_core);
         }
     }
@@ -260,7 +249,7 @@ namespace async_tcp {
      * other threads and interrupt handlers to access the context.
      */
     void ContextManager::releaseLock() const {
-        if (m_context_core) {
+        if (initiated) {
             async_context_release_lock(m_context_core);
         }
     }

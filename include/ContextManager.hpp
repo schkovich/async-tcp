@@ -75,30 +75,21 @@ namespace async_tcp {
      */
     class ContextManager {
 
-            async_context_threadsafe_background_t
-                *m_context; /**< Thread-safe background context for asynchronous
-                               operations. */
-            async_context_t *m_context_core; /**< Pointer to the core
-                                                asynchronous context. */
-            bool initiated = false; /**< Flag indicating whether the context has
-                                       been initialized. */
+            async_context_threadsafe_background_t m_context; /**< Thread-safe background context for asynchronous operations. */
+            async_context_t *m_context_core = nullptr; /**< Reference to the core asynchronous context. */
+            bool initiated = false; /**< Flag indicating whether the context has been initialized. */
 
         public:
             /**
-             * @brief Constructs a ContextManager with a specific background
-             * context.
+             * @brief Constructs a ContextManager with its own background context.
              *
-             * This constructor initializes a ContextManager instance without
-             * activating the context. The context must be explicitly
-             * initialized later with initDefaultContext() before use. This
-             * separation allows the caller to handle initialization failures
+             * This constructor initializes a ContextManager instance and sets up
+             * the reference to the internal core context. The context must be
+             * explicitly initialized later with initDefaultContext() before use.
+             * This separation allows the caller to handle initialization failures
              * appropriately.
-             *
-             * @param context Reference to a background context structure to be
-             * managed
              */
-            explicit ContextManager(
-                async_context_threadsafe_background_t &context);
+            ContextManager();
 
             /**
              * @brief Destructor that cleans up the asynchronous context and

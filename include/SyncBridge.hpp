@@ -1,5 +1,25 @@
 #pragma once
 
+/**
+ * @file SyncBridge.hpp
+ * @brief Synchronous bridge for thread-safe, context-aware resource access
+ *
+ * This file defines the SyncBridge pattern, which provides a mechanism for safely executing operations
+ * on shared resources across different execution contexts (e.g., multiple threads or cores).
+ *
+ * The SyncBridge ensures:
+ *   - Thread-safe access to shared resources
+ *   - Operations are executed in the correct async context
+ *   - Synchronous (blocking) interface for async operations
+ *
+ * Usage:
+ *   1. Derive from SyncBridge and implement onExecute().
+ *   2. Use execute() to perform thread-safe, context-aware operations.
+ *
+ * @author goran
+ * @date 2025-02-21
+ */
+
 #include "ContextManager.hpp"
 #include <memory>
 #include <atomic>
@@ -28,6 +48,16 @@ namespace async_tcp {
      */
     using SyncPayloadPtr = std::unique_ptr<SyncPayload>;
 
+    /**
+     * @brief Synchronous handler for async context worker execution (C linkage).
+     *
+     * This function is registered as the handler for PerpetualWorker in SyncBridge::execute().
+     * It is always called in the correct async context, executes the user operation,
+     * and signals completion by releasing the stack-allocated semaphore in the ExecutionContext.
+     *
+     * @param context Pointer to the async context (unused).
+     * @param worker  Pointer to the async_when_pending_worker_t containing the ExecutionContext.
+     */
     extern "C" void sync_handler(async_context_t *context, async_when_pending_worker_t *worker);
 
     /**
@@ -58,18 +88,22 @@ namespace async_tcp {
     class SyncBridge {
 
             const ContextManagerPtr &m_ctx;        ///< Context manager for execution
-            PerpetualWorker m_worker;       ///< Worker for async operations
-            semaphore_t m_semaphore = {};   ///< Semaphore for synchronization
-            recursive_mutex_t m_execution_mutex = {}; // Serialize access to execution
-            volatile bool m_executing = false;  ///< Track if this instance is currently executing
+            /**
+             * @brief Recursive mutex for serializing access to execute() per SyncBridge instance.
+             *
+             * Ensures that only one thread or context can execute a synchronous operation on this instance at a time.
+             * Initialized in the constructor. Not shared between calls or instances.
+             */
+            recursive_mutex_t m_execution_mutex = {};
 
             /**
-             * @brief Abstract method that defines the resource-specific
-             * operation logic
+             * @brief Pure virtual method to be implemented by derived classes for actual resource operation.
              *
-             * @param payload A unique pointer to a SyncPayload object
-             * containing operation data
-             * @return uint32_t Result code from the operation
+             * This method is called in the correct execution context by the SyncBridge machinery.
+             * It receives a unique payload for the operation and must return a result code.
+             *
+             * @param payload Unique pointer to operation data for this execution.
+             * @return uint32_t Result code from the operation.
              */
             virtual uint32_t onExecute(SyncPayloadPtr payload) = 0;
 
@@ -97,12 +131,7 @@ namespace async_tcp {
              *
              * @param ctx Reference to a shared context manager pointer
              */
-            explicit SyncBridge(const ContextManagerPtr &ctx) : m_ctx(ctx) {}
-
-            void initialize() {
-                m_worker.setHandler(sync_handler);
-                m_ctx->addWorker(m_worker);
-                sem_init(&m_semaphore, 0, 1);
+            explicit SyncBridge(const ContextManagerPtr &ctx) : m_ctx(ctx) {
                 recursive_mutex_init(&m_execution_mutex);
             }
 
@@ -128,20 +157,26 @@ namespace async_tcp {
              */
             virtual uint32_t execute(SyncPayloadPtr payload);
 
-            static std::atomic<bool> executing_flag; ///< Global re-entrancy guard
+            static std::atomic<bool> executing_flag; ///< Global reentrancy guard
     };
 
     /**
      * @struct ExecutionContext
-     * @brief Per-execution context that holds payload and result
+     * @brief Per-call context for synchronous execution in SyncBridge
      *
-     * This structure is allocated per execution call to avoid race conditions
-     * when multiple threads call execute() on the same SyncBridge instance.
+     * Holds all data needed for a single synchronous operation, including:
+     *   - Pointer to the SyncBridge instance
+     *   - Unique payload for the operation
+     *   - Result value
+     *   - Pointer to a stack-allocated semaphore for signaling completion
+     *
+     * This struct is allocated per execute() call, ensuring thread safety and reentrancy.
      */
     struct ExecutionContext {
         SyncBridge* bridge{nullptr};
         SyncPayloadPtr payload{};
         uint32_t result{0};
+        semaphore_t* semaphore{nullptr}; ///< Stack-allocated semaphore for this call
     };
 
 

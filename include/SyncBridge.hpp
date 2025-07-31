@@ -22,7 +22,6 @@
 
 #include "ContextManager.hpp"
 #include <memory>
-#include <atomic>
 
 namespace async_tcp {
 

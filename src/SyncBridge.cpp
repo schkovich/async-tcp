@@ -13,7 +13,7 @@
  */
 
 #include "SyncBridge.hpp"
-#include <atomic>
+#include "pico/critical_section.h"
 
 namespace async_tcp {
 
@@ -58,8 +58,15 @@ namespace async_tcp {
         PerpetualWorker worker = {};
         worker.setHandler(sync_handler);
         worker.setPayload(exec_ctx);
+
+        critical_section_t crit_sec;
+        critical_section_init(&crit_sec);
+        critical_section_enter_blocking(&crit_sec);
         m_ctx->addWorker(worker);
         m_ctx->setWorkPending(worker);
+        critical_section_exit(&crit_sec);
+        critical_section_deinit(&crit_sec);
+
         sem_acquire_blocking(&semaphore);
 
         // Get result and cleanup

@@ -112,8 +112,7 @@ namespace async_tcp {
                      */
             EphemeralWorker m_ephemeral_worker; /**< Ephemeral worker instance
                                                    for timed execution */
-            const ContextManagerPtr
-                &m_ctx; /**< Reference to the context manager */
+            const AsyncCtx &m_ctx; /**< Reference to the context manager */
             std::unique_ptr<EventBridge> m_self =
                 nullptr; /**< Self-reference for automatic cleanup */
 
@@ -174,7 +173,7 @@ namespace async_tcp {
              * @param ctx A reference to unique pointer to the context manager
              * that will execute this worker
              */
-            explicit EventBridge(const ContextManagerPtr &ctx);
+            explicit EventBridge(const AsyncCtx &ctx);
 
             /**
              * @brief Destructor that handles cleanup based on worker type.
@@ -190,7 +189,7 @@ namespace async_tcp {
                 m_perpetual_worker.setHandler(&perpetual_bridging_function);
                 // Store a direct pointer to this EventBridge instance
                 m_perpetual_worker.setPayload(this);
-                m_ctx->addWorker(m_perpetual_worker);
+                m_ctx.addWorker(m_perpetual_worker);
             }
 
             void initialiseEphemeralBridge() {

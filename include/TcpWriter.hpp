@@ -33,7 +33,7 @@ namespace async_tcp {
         private:
             static constexpr uint64_t WRITE_TIMEOUT_US = 5000000;  ///< Write timeout in microseconds (5 seconds)
 
-            const ContextManagerPtr& m_ctx;           ///< Context manager for worker execution
+            const AsyncCtx & m_ctx;           ///< Context manager for worker execution
             TcpClient& m_io;                          ///< TCP client for write operations
 
             // State for managing multi-chunk writes
@@ -49,7 +49,7 @@ namespace async_tcp {
              * @param ctx Reference to Context manager for scheduling write operations
              * @param io Reference to TcpClient for actual I/O operations
              */
-            TcpWriter(const ContextManagerPtr& ctx, TcpClient& io);
+            TcpWriter(const AsyncCtx & ctx, TcpClient& io);
 
             /**
              * @brief Destructor

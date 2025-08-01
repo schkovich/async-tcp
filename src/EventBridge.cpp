@@ -35,7 +35,7 @@ namespace async_tcp {
      * @param ctx Shared pointer to the context manager that will execute this
      * worker
      */
-    EventBridge::EventBridge(const ContextManagerPtr &ctx) : m_ctx(ctx) {}
+    EventBridge::EventBridge(const AsyncCtx &ctx) : m_ctx(ctx) {}
 
     /**
      * @brief Destructor that handles cleanup based on worker type.
@@ -51,7 +51,7 @@ namespace async_tcp {
             // Check if m_worker was explicitly initialized (indicating a
             // persistent worker)
             if (m_perpetual_worker.getWorker()->do_work != nullptr) {
-                m_ctx->removeWorker(m_perpetual_worker);
+                m_ctx.removeWorker(m_perpetual_worker);
             }
         }
         // Otherwise, m_worker is in its default state, so this was an ephemeral
@@ -65,7 +65,7 @@ namespace async_tcp {
      * execution. The worker will be executed when the async context processes
      * its queue, maintaining proper core affinity.
      */
-    void EventBridge::run() { m_ctx->setWorkPending(m_perpetual_worker); }
+    void EventBridge::run() { m_ctx.setWorkPending(m_perpetual_worker); }
 
     /**
      * @brief Schedules the ephemeral worker to run after the specified delay.
@@ -80,7 +80,7 @@ namespace async_tcp {
      * for execution
      */
     void EventBridge::run(const uint32_t run_in) { // NOLINT
-        if (const auto result = m_ctx->addWorker(m_ephemeral_worker, run_in);
+        if (const auto result = m_ctx.addWorker(m_ephemeral_worker, run_in);
             !result) {
             DEBUGV("[c%d][%llu][ERROR] EventBridge::run - Failed to add "
                    "ephemeral worker: %p, error: %lu\n",

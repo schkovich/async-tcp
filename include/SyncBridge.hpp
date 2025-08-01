@@ -89,7 +89,7 @@ namespace async_tcp {
      */
     class SyncBridge {
 
-            const ContextManagerPtr &m_ctx; ///< Context manager for execution
+            const AsyncCtx &m_ctx; ///< Context manager for execution
             /**
              * @brief Recursive mutex for serializing access to execute() per
              * SyncBridge instance.
@@ -232,7 +232,7 @@ namespace async_tcp {
              *
              * @param ctx Reference to a shared context manager pointer
              */
-            explicit SyncBridge(const ContextManagerPtr &ctx);
+            explicit SyncBridge(const AsyncCtx &ctx);
 
             /**
              * @brief Virtual destructor to allow proper cleanup in derived classes

@@ -267,6 +267,6 @@ namespace async_tcp {
      * This unique_ptr ensures proper cleanup of the ContextManager when it goes
      * out of scope.
      */
-    using ContextManagerPtr = std::unique_ptr<ContextManager>;
+    using AsyncCtx = ContextManager;
 
 } // namespace AsyncTcp

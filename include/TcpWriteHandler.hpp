@@ -57,7 +57,7 @@ namespace async_tcp {
              * @param size Size of data chunk to write
              * @param io Reference to the TCP client that will perform the write
              */
-            TcpWriteHandler(const ContextManagerPtr &ctx,
+            TcpWriteHandler(const AsyncCtx &ctx,
                            const uint8_t* data,
                            size_t size,
                            TcpClient& io);
@@ -74,12 +74,12 @@ namespace async_tcp {
              * @param remaining Total remaining bytes to write (including this chunk)
              * @param io TCP client to use
              */
-            static void create(const ContextManagerPtr& ctx,
+            static void create(const AsyncCtx & ctx,
                                const uint8_t* data,
                                size_t size,
                                TcpClient& io) {
                 // Assert that the calling core matches the context core
-                assert(get_core_num() == ctx->getCore());
+                assert(get_core_num() == ctx.getCore());
                 auto handler = std::make_unique<TcpWriteHandler>(ctx, data, size, io);
                 TcpWriteHandler* raw_ptr = handler.get();
                 raw_ptr->initialiseEphemeralBridge();

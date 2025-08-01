@@ -20,7 +20,7 @@
 
 namespace async_tcp {
 
-    SyncBridge::SyncBridge(const ContextManagerPtr &ctx) : m_ctx(ctx) {
+    SyncBridge::SyncBridge(const AsyncCtx &ctx) : m_ctx(ctx) {
         recursive_mutex_init(&m_execution_mutex);
     }
 
@@ -77,14 +77,14 @@ namespace async_tcp {
         critical_section_init(&crit_sec);
 
         critical_section_enter_blocking(&crit_sec);
-        m_ctx->addWorker(*worker);
-        m_ctx->setWorkPending(*worker);
+        m_ctx.addWorker(*worker);
+        m_ctx.setWorkPending(*worker);
         critical_section_exit(&crit_sec);
 
         sem_acquire_blocking(semaphore.get());
 
         critical_section_enter_blocking(&crit_sec);
-        m_ctx->removeWorker(*worker);
+        m_ctx.removeWorker(*worker);
         critical_section_exit(&crit_sec);
 
         critical_section_deinit(&crit_sec);

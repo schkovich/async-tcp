@@ -13,7 +13,7 @@
 
 namespace async_tcp {
 
-    TcpWriter::TcpWriter(const ContextManagerPtr& ctx, TcpClient& io)
+    TcpWriter::TcpWriter(const AsyncCtx & ctx, TcpClient& io)
         : m_ctx(ctx), m_io(io), m_data(nullptr), m_written(0),
           m_total_size(0), m_write_in_progress(false), m_write_start_time(nil_time) {
     }

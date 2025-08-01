@@ -16,7 +16,7 @@
 
 namespace async_tcp {
 
-    TcpWriteHandler::TcpWriteHandler(const ContextManagerPtr& ctx,
+    TcpWriteHandler::TcpWriteHandler(const AsyncCtx & ctx,
                                      const uint8_t* data,
                                      size_t size,
                                      TcpClient& io)

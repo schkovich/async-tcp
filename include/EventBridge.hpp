@@ -10,15 +10,15 @@
  *
  * The EventBridge supports explicit initialization of worker types:
  *
- * 1. Persistent "when pending" workers - Registered via initialisePerpetualBridge().
- *    These remain registered with the context manager until explicitly removed.
- *    Their lifecycle is managed externally and registration is no longer automatic
- *    in the constructor.
+ * 1. Persistent "when pending" workers - Registered via
+ * initialisePerpetualBridge(). These remain registered with the context manager
+ * until explicitly removed. Their lifecycle is managed externally and
+ * registration is no longer automatic in the constructor.
  *
  * 2. Ephemeral "at time" workers - Registered via initialiseEphemeralBridge().
- *    These execute once at a specific time and are automatically removed from the
- *    context manager after execution. They can optionally manage their own lifecycle
- *    through self-ownership.
+ *    These execute once at a specific time and are automatically removed from
+ * the context manager after execution. They can optionally manage their own
+ * lifecycle through self-ownership.
  *
  * The EventBridge follows the Template Method pattern, managing the
  * registration and lifecycle of workers with the async context while providing
@@ -43,13 +43,44 @@
 
 namespace async_tcp {
 
-    // Forward declarations of the bridging function with C linkage
-    extern "C" void
-    perpetual_bridging_function(async_context_t *context,
-                                async_when_pending_worker_t *worker);
-    extern "C" void ephemeral_bridging_function(async_context_t *context,
-                                                async_work_on_timeout *worker);
-
+    extern "C" {
+    /**
+     * @brief Bridging function that connects the C-style callback to the
+     * C++ object.
+     *
+     * This function is called by the async context when a persistent worker
+     * is pending execution. It retrieves the EventBridge instance from the
+     * worker's user_data and calls its doWork method. The extern "C"
+     * linkage ensures correct calling convention for the C-based SDK.
+     *
+     * @param context The async context that is executing the worker
+     * @param worker The async_when_pending_worker_t that is being executed
+     */
+    void perpetual_bridging_function(async_context_t *context,
+                                     async_when_pending_worker_t *worker);
+    /**
+     * @brief Bridging function that connects the C-style callback to the
+     * C++ object for ephemeral workers.
+     *
+     * This function is called by the async context when an ephemeral
+     * worker's time arrives. It retrieves the EventBridge instance from the
+     * worker's user_data, calls its doWork method, and then releases
+     * ownership to trigger cleanup when the function returns.
+     *
+     * This function also handles queue monitoring for performance tracking,
+     * and toggles the LED_BUILTIN pin to provide visual feedback during
+     * worker execution.
+     *
+     * Note: By the time this function is called, the async context has
+     * already removed the worker from its internal list, so no explicit
+     * removal is needed.
+     *
+     * @param context The async context that is executing the worker
+     * @param worker The async_work_on_timeout that is being executed
+     */
+    void ephemeral_bridging_function(async_context_t *context,
+                                     async_work_on_timeout *worker);
+    }
     /**
      * @class EventBridge
      * @brief Bridges between the C-style async context API and C++
@@ -60,13 +91,12 @@ namespace async_tcp {
      *
      * 1. Persistent "when pending" workers - Registered via
      * initialisePerpetualBridge(). These remain registered with the context
-     * manager until explicitly removed. Their lifecycle is managed externally and
-     * registration is no longer automatic in the constructor.
+     * manager until explicitly removed. Their lifecycle is managed externally
+     * and registration is no longer automatic in the constructor.
      *
-     * 2. Ephemeral "at time" workers - Registered via initialiseEphemeralBridge().
-     * These execute once at a specific time and are automatically removed from the
-     * context manager after execution. They can optionally manage their own
-     * lifecycle through self-ownership.
+     * 2. Ephemeral "at time" workers - Registered via
+     * initialiseEphemeralBridge(). These execute once at a specific time and
+     * are automatically removed from the context manager before execution. They manage their own lifecycle through self-ownership.
      *
      * This class follows the Template Method pattern, where `doWork()` is the
      * template method that defines the algorithm structure, and `onWork()` is
@@ -225,4 +255,4 @@ namespace async_tcp {
             void run(uint32_t run_in);
     };
 
-} // namespace AsyncTcp
+} // namespace async_tcp

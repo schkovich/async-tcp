@@ -12,24 +12,11 @@ namespace async_tcp {
         return &m_worker;
     }
 
-    /**
-     * @brief Sets the handler function for the worker.
-     *
-     * This method allows the user to specify a custom handler function that will
-     * be called when the worker is executed. The handler should match the
-     * signature expected by async_context_t.
-     *
-     * @param handler_func Pointer to the handler function to be set
-     */
     void PerpetualWorker::setHandler(void (*handler_func)(
         async_context_t *, async_when_pending_worker_t *)) {
         m_worker.do_work = handler_func;
     }
 
-    /**
-     *
-     * @param data Pointer to EventBridge instance
-     */
     void PerpetualWorker::setPayload(void *data) { m_worker.user_data = data; }
 
-} // namespace AsyncTcp
+} // namespace async_tcp

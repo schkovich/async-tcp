@@ -77,13 +77,15 @@ namespace async_tcp {
      * Key features:
      * - Guarantees thread-safe access to shared resources
      * - Enables operations to run in the correct execution context
-     * - Provides a consistent interface for synchronous operations in an async environment
-     * - Can be extended for different types of resources (buffers, connections, etc.)
+     * - Provides a consistent interface for synchronous operations in an async
+     * environment
+     * - Can be extended for different types of resources (buffers, connections,
+     * etc.)
      *
      * Typical usage involves:
      * 1. Deriving from SyncBridge
      * 2. Implementing the onExecute() method with your domain-specific logic
-     * 3. Exposing higher-level methods that use execute() internally
+     * 3. Exposing higher-level methods that use execute() internally.
      *
      * @see ContextManager for the underlying execution context management
      */
@@ -104,14 +106,16 @@ namespace async_tcp {
              * @struct ExecutionContext
              * @brief Per-call context for synchronous execution in SyncBridge
              *
-             * Holds all data needed for a single synchronous operation, including:
+             * Holds all data needed for a single synchronous operation,
+             * including:
              *   - Pointer to the SyncBridge instance
              *   - Unique payload for the operation
              *   - Result value
-             *   - Pointer to a heap-allocated semaphore for signaling completion
+             *   - Pointer to a heap-allocated semaphore for signaling
+             * completion
              *
-             * This struct is allocated per execute() call, ensuring thread safety
-             * and reentrancy.
+             * This struct is allocated per execute() call, ensuring thread
+             * safety and reentrancy.
              */
             struct ExecutionContext {
                     SyncBridge *bridge{nullptr};
@@ -139,16 +143,20 @@ namespace async_tcp {
              * @brief Acquire the bridge's recursive mutex for thread-safe
              * execution.
              */
-            inline void lockBridge();
+            void lockBridge() {
+                recursive_mutex_enter_blocking(&m_execution_mutex);
+            }
 
             /**
              * @brief Release the bridge's recursive mutex after execution.
              */
-            inline void unlockBridge();
+            void unlockBridge() {
+                recursive_mutex_exit(&m_execution_mutex);
+            }
 
             /**
-             * @brief Create and initialize a heap-allocated semaphore for this synchronous
-             * operation.
+             * @brief Create and initialize a heap-allocated semaphore for this
+             * synchronous operation.
              * @return A unique pointer to semaphore_t for signaling completion.
              */
             static inline std::unique_ptr<semaphore_t> getSemaphore();
@@ -164,17 +172,21 @@ namespace async_tcp {
              */
             inline std::unique_ptr<ExecutionContext>
             getExecutionContext(SyncPayloadPtr payload,
-                                std::unique_ptr<semaphore_t> &semaphore);
+                                const std::unique_ptr<semaphore_t> &semaphore);
 
             /**
-             * @brief Allocate and initialize a PerpetualWorker for this
-             * operation.
-             * @param exec_ctx Pointer to the execution context for this
-             * operation
-             * @return Unique pointer to a configured PerpetualWorker
+             * @brief Creates a new PerpetualWorker for the given execution
+             * context.
+             *
+             * This method allocates and configures a PerpetualWorker, setting
+             * its handler and payload. The payload is set as a pointer to the
+             * provided ExecutionContext reference.
+             *
+             * @param exec_ctx Reference to the ExecutionContext for the worker
+             * @return A unique_ptr to the created PerpetualWorker
              */
             static inline std::unique_ptr<PerpetualWorker>
-            getWorker(ExecutionContext *exec_ctx);
+            getWorker(const std::unique_ptr<ExecutionContext> &exec_ctx);
 
             /**
              * @brief Schedule the worker for execution in the async context
@@ -188,10 +200,9 @@ namespace async_tcp {
              * ownership)
              * @return Result code from the operation
              */
-            inline uint32_t
-            executeWork(std::unique_ptr<PerpetualWorker> worker,
-                        std::unique_ptr<ExecutionContext> exec_ctx,
-                        std::unique_ptr<semaphore_t> semaphore);
+            uint32_t executeWork(std::unique_ptr<PerpetualWorker> worker,
+                                 std::unique_ptr<ExecutionContext> exec_ctx,
+                                 std::unique_ptr<semaphore_t> semaphore) const;
 
         protected:
             /**
@@ -227,15 +238,17 @@ namespace async_tcp {
             /**
              * @brief Constructs a SyncBridge with the specified context manager
              *
-             * Initializes the recursive mutex for thread-safe execution. This ensures
-             * that all synchronous operations on this instance are properly serialized.
+             * Initializes the recursive mutex for thread-safe execution. This
+             * ensures that all synchronous operations on this instance are
+             * properly serialized.
              *
              * @param ctx Reference to a shared context manager pointer
              */
             explicit SyncBridge(const AsyncCtx &ctx);
 
             /**
-             * @brief Virtual destructor to allow proper cleanup in derived classes
+             * @brief Virtual destructor to allow proper cleanup in derived
+             * classes
              */
             virtual ~SyncBridge() = default;
 
@@ -253,7 +266,7 @@ namespace async_tcp {
              * containing operation data
              * @return uint32_t Result code from the operation
              */
-            virtual uint32_t execute(SyncPayloadPtr payload);
+            uint32_t execute(SyncPayloadPtr payload);
     };
 
 } // namespace async_tcp

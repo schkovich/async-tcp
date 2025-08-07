@@ -119,7 +119,7 @@ namespace async_tcp {
              * @return true if the worker was successfully added, false if the
              * context is invalid or addition failed
              */
-            bool addWorker(PerpetualWorker &worker) const;
+            bool addWorker(PerpetualWorker& worker) const;
 
             /**
              * @brief Adds a temporary worker that executes once after an
@@ -135,7 +135,7 @@ namespace async_tcp {
              * @return true if the worker was successfully scheduled, false
              * otherwise
              */
-            bool addWorker(EphemeralWorker &worker, uint32_t delay = 0) const;
+            bool addWorker(EphemeralWorker& worker, uint32_t delay = 0) const;
 
             /**
              * @brief Removes a previously added worker from the context.
@@ -148,7 +148,7 @@ namespace async_tcp {
              * @return true if the worker was successfully removed, false
              * otherwise
              */
-            bool removeWorker(PerpetualWorker &worker) const;
+            bool removeWorker(PerpetualWorker& worker) const;
 
             /**
              * @brief Removes an ephemeral worker from the scheduled queue
@@ -159,7 +159,7 @@ namespace async_tcp {
              * @return true if the worker was successfully removed, false
              * otherwise
              */
-            bool removeWorker(EphemeralWorker &worker) const;
+            bool removeWorker(EphemeralWorker& worker) const;
 
             /**
              * @brief Marks a worker as having pending work to be processed.
@@ -171,7 +171,7 @@ namespace async_tcp {
              * @param worker Reference to the PerpetualWorker instance for which
              * work is set as pending
              */
-            void setWorkPending(PerpetualWorker &worker) const;
+            void setWorkPending(PerpetualWorker& worker) const;
 
             /**
              * @brief Acquires a blocking lock on the asynchronous context.
@@ -269,4 +269,4 @@ namespace async_tcp {
      */
     using AsyncCtx = ContextManager;
 
-} // namespace AsyncTcp
+} // namespace async_tcp

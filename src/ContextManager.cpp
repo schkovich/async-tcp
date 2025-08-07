@@ -51,19 +51,34 @@ namespace async_tcp {
         return true;
     }
 
-    bool ContextManager::addWorker(PerpetualWorker &worker) const {
+    bool ContextManager::addWorker(PerpetualWorker& worker) const {
         if (!initiated) {
             return false;
         }
-        if (!async_context_add_when_pending_worker(m_context_core,
-                                                   worker.getWorker())) {
+        bool added = false;
+
+        if (get_core_num() != m_context_core->core_num) {
+            critical_section_t crit_sec = {nullptr};
+            critical_section_init(&crit_sec);
+            critical_section_enter_blocking(&crit_sec);
+            added = async_context_add_when_pending_worker(m_context_core,
+                                                          worker.getWorker());
+            critical_section_exit(&crit_sec);
+            critical_section_deinit(&crit_sec);
+        } else {
+            added = async_context_add_when_pending_worker(m_context_core,
+                                                          worker.getWorker());
+        }
+
+        if (!added) {
             DEBUGV("ContextManager::addWorker - Failed to add worker!\n");
             return false;
         }
+
         return true;
     }
 
-    bool ContextManager::addWorker(EphemeralWorker &worker,
+    bool ContextManager::addWorker(EphemeralWorker& worker,
                                    const uint32_t delay) const {
         if (!initiated) {
             DEBUGV("ContextManager::addWorker - no context!\n");
@@ -79,21 +94,51 @@ namespace async_tcp {
             DEBUGV("ContextManager::addWorker - no user data set!\n");
             return false;
         }
-        if (!async_context_add_at_time_worker_in_ms(m_context_core, worker_ptr,
-                                                    delay)) {
+
+        bool added = false;
+
+        if (get_core_num() != m_context_core->core_num) {
+            critical_section_t crit_sec = {nullptr};
+            critical_section_init(&crit_sec);
+            critical_section_enter_blocking(&crit_sec);
+            added = async_context_add_at_time_worker_in_ms(m_context_core,
+                                                           worker_ptr, delay);
+            critical_section_exit(&crit_sec);
+            critical_section_deinit(&crit_sec);
+        } else {
+            added = async_context_add_at_time_worker_in_ms(m_context_core,
+                                                           worker_ptr, delay);
+        }
+
+        if (!added) {
             DEBUGV("ContextManager::addWorker - Failed to add worker!\n");
             return false;
         }
+
         return true;
     }
 
-    bool ContextManager::removeWorker(PerpetualWorker &worker) const {
+    bool ContextManager::removeWorker(PerpetualWorker& worker) const {
         if (!initiated) {
             DEBUGV("ContextManager::removeWorker - no context!\n");
             return false;
         }
-        if (!async_context_remove_when_pending_worker(m_context_core,
-                                                      worker.getWorker())) {
+        bool removed = false;
+
+        if (get_core_num() != m_context_core->core_num) {
+            critical_section_t crit_sec = {nullptr};
+            critical_section_init(&crit_sec);
+            critical_section_enter_blocking(&crit_sec);
+            removed = async_context_remove_when_pending_worker(
+                m_context_core, worker.getWorker());
+            critical_section_exit(&crit_sec);
+            critical_section_deinit(&crit_sec);
+        } else {
+            removed = async_context_remove_when_pending_worker(
+                m_context_core, worker.getWorker());
+        }
+
+        if (!removed) {
             DEBUGV("ContextManager::removeWorker - Failed to remove when "
                    "pending worker!\n");
             return false;
@@ -101,7 +146,7 @@ namespace async_tcp {
         return true;
     }
 
-    bool ContextManager::removeWorker(EphemeralWorker &worker) const {
+    bool ContextManager::removeWorker(EphemeralWorker& worker) const {
         if (!initiated) {
             return false;
         }
@@ -114,7 +159,7 @@ namespace async_tcp {
         return true;
     }
 
-    void ContextManager::setWorkPending(PerpetualWorker &worker) const {
+    void ContextManager::setWorkPending(PerpetualWorker& worker) const {
         if (initiated) {
             async_context_set_work_pending(m_context_core, worker.getWorker());
         }

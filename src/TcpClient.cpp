@@ -196,8 +196,7 @@ namespace async_tcp {
         assert(m_writer && "TcpWriter must be configured for async operations");
 
         // Atomically check if no write is in progress and set it to true if so
-        bool expected = false;
-        if (!m_writer->tryStartWrite(expected)) {
+        if (bool expected = false; !m_writer->tryStartWrite(expected)) {
             DEBUGWIRE("[TcpClient] Write operation already in progress, rejecting new write\n");
             return PICO_ERROR_RESOURCE_IN_USE;
         }

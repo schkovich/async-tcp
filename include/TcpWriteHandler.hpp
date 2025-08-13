@@ -20,7 +20,6 @@
 #include "TcpClient.hpp"
 #include <functional>
 #include <memory>
-#include <string>
 
 namespace async_tcp {
 
@@ -71,7 +70,6 @@ namespace async_tcp {
              * @param ctx Context manager for execution
              * @param data Pointer to binary data chunk to write
              * @param size Size of data chunk to write
-             * @param remaining Total remaining bytes to write (including this chunk)
              * @param io TCP client to use
              */
             static void create(const AsyncCtx & ctx,

@@ -581,7 +581,7 @@ namespace async_tcp {
             }
 
             void setOnErrorCallback(const std::function<void(err_t err)> &cb) {
-                _errorCb = cb; // Set the error callback
+                _errorCb = cb;
             }
 
             void setOnReceiveCallback(

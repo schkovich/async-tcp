@@ -3,16 +3,24 @@
  * @brief Implementation of the EventBridge class for bridging between C-style
  * async context and C++ event handling.
  *
- * This file implements the EventBridge class, which provides a foundation for event handlers with proper core affinity in the AsyncTcpClient library.
- * It supports explicit initialization and registration of worker types:
+ * This file implements the EventBridge class, which provides a foundation for
+ * event handlers with proper core affinity in the AsyncTcpClient library. It
+ * supports explicit initialization and registration of worker types:
  *
- * 1. Persistent "when pending" workers - Registered via initialisePerpetualBridge().
- *    These remain registered with the context manager until explicitly removed. Registration is no longer automatic in the constructor.
+ * 1. Persistent "when pending" workers - Registered via
+ * initialisePerpetualBridge(). These remain registered with the context manager
+ * until explicitly removed. Registration is no longer automatic in the
+ * constructor.
  *
  * 2. Ephemeral "at time" workers - Registered via initialiseEphemeralBridge().
- *    These execute once at a specific time and are automatically removed from the context manager after execution. They can optionally manage their own lifecycle through self-ownership.
+ *    These execute once at a specific time and are automatically removed from
+ * the context manager after execution. They can optionally manage their own
+ * lifecycle through self-ownership.
  *
- * The implementation manages worker registration, lifecycle, and event execution, following the Template Method pattern. It provides thread-safe execution with core affinity guarantees and a clean separation between async mechanisms and business logic.
+ * The implementation manages worker registration, lifecycle, and event
+ * execution, following the Template Method pattern. It provides thread-safe
+ * execution with core affinity guarantees and a clean separation between async
+ * mechanisms and business logic.
  *
  * @ingroup AsyncTCPClient
  */
@@ -81,9 +89,10 @@ namespace async_tcp {
                                      async_work_on_timeout *worker) { // NOLINT
         (void)context;
         if (worker && worker->user_data) {
-            const auto pBridge = static_cast<EventBridge *>(worker->user_data);
-            pBridge->doWork();
-            pBridge->releaseOwnership();
+            const auto local_bridge =
+                static_cast<EventBridge *>(worker->user_data)
+                    ->releaseOwnership();
+            local_bridge->doWork();
         } else {
             DEBUGV("\033[1;31m[AC-%d][%llu][ERROR] "
                    "EventBridge::ephemeral_bridging_function - invalid worker "

@@ -12,7 +12,6 @@
  */
 
 #include "TcpWriteHandler.hpp"
-#include "lwip/tcp.h"
 
 namespace async_tcp {
 
@@ -25,7 +24,7 @@ namespace async_tcp {
 
     void TcpWriteHandler::onWork() {
         if (!m_data || m_size == 0) {
-            // No valid data to write - let the cleanup mechanism handle destruction
+            // No valid data to write - let the cleanup mechanism handle destruction.
             return;
         }
 

@@ -1,5 +1,5 @@
 /*
-    AsyncTcpClient.cpp - TCP/IP client for esp8266, mostly compatible
+    TcpClient.cpp - TCP/IP client for esp8266, mostly compatible
                    with Arduino WiFi shield library
 
     Copyright (c) 2014 Ivan Grokhotkov. All rights reserved.
@@ -158,7 +158,7 @@ namespace async_tcp {
             checkAndHandleWriteTimeout();
         });
 
-        if (const int res = _ctx->connect(ip, port); res == 0) {
+        if (const auto res = _ctx->connect(ip, port); res != ERR_OK) {
             DEBUGWIRE("Client did not menage to connect.\n");
             _ctx->unref();
             _ctx = nullptr;
@@ -318,6 +318,10 @@ namespace async_tcp {
     }
 
     uint8_t TcpClient::status() {
+        return m_sync_accessor->status();
+    }
+
+    uint8_t TcpClient::_ts_status() {
         if (!_ctx) {
             return CLOSED;
         }

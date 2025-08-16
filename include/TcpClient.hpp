@@ -1,5 +1,5 @@
 /**
- * @file AsyncTcpClient.hpp
+ * @file TcpClient.hpp
  * @brief Header file for the AsyncTcpClient class for Arduino Nano RP2040
  * Connect.
  *
@@ -39,6 +39,7 @@
 #include "EventBridge.hpp"
 #include "Print.h"
 #include "TcpWriter.hpp"
+#include "TcpClientSyncAccessor.hpp"
 #include <memory>
 
 
@@ -67,9 +68,10 @@ namespace async_tcp {
     using AString = String;
 
     using TcpWriterPtr = std::unique_ptr<TcpWriter>;
+    using TcpClientSyncAccessorPtr = std::unique_ptr<TcpClientSyncAccessor>;
 
     /**
-     * @class AsyncTcpClient
+     * @class TcpClient
      * @brief Asynchronous TCP client class.
      *
      * This class implements a TCP client that supports asynchronous operations.
@@ -342,6 +344,7 @@ namespace async_tcp {
             int availableForWrite() override;
 
             friend class WiFiServer;
+            friend class TcpClientSyncAccessor;
 
             using Print::write;
 
@@ -393,6 +396,12 @@ namespace async_tcp {
              */
             void setWriter(TcpWriterPtr writer);
 
+            /**
+             * @brief Set the sync accessor for this TcpClient instance.
+             * @param accessor Unique pointer to TcpClientSyncAccessor instance
+             */
+            void setSyncAccessor(TcpClientSyncAccessorPtr accessor);
+
         protected:
             std::unique_ptr<EventBridge> _received_callback_worker;
             std::unique_ptr<EventBridge> _connected_callback_worker;
@@ -406,6 +415,7 @@ namespace async_tcp {
             static uint16_t _localPort;
 
             TcpWriterPtr m_writer{};  ///< Writer for chunked operations
+            TcpClientSyncAccessorPtr m_sync_accessor; ///< Sync accessor for thread-safe operations
 
             void _onConnectCallback() const;
 
@@ -417,5 +427,7 @@ namespace async_tcp {
 
             void _onAckCallback(tcp_pcb *tpcb, uint16_t len) const;
             bool checkAndHandleWriteTimeout();
+        private:
+            virtual uint8_t _ts_status();
     };
 } // namespace AsyncTcp

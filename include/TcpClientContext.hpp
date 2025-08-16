@@ -1,5 +1,5 @@
 /*
-    AsyncTcpClientContext.h - TCP connection handling on top of lwIP
+    TcpClientContext.h - TCP connection handling on top of lwIP
 
     Copyright (c) 2014 Ivan Grokhotkov. All rights reserved.
     This file is part of the esp8266 core for Arduino environment.
@@ -39,7 +39,7 @@ namespace async_tcp {
     class TcpClientContext {
         public:
             TcpClientContext(tcp_pcb *pcb, const discard_cb_t discard_cb,
-                                  void *discard_cb_arg)
+                             void *discard_cb_arg)
                 : _pcb(pcb), _rx_buf(nullptr), _rx_buf_offset(0),
                   _discard_cb(discard_cb), _discard_cb_arg(discard_cb_arg),
                   _ref_cnt(0), _next(nullptr) {
@@ -119,33 +119,35 @@ namespace async_tcp {
                 }
             }
 
-            int connect(ip_addr_t *addr, uint16_t port) const {
+            err_t connect(ip_addr_t *addr, const uint16_t port) const {
                 // note: not using `const ip_addr_t* addr` because
-                // - `ip6_addr_assign_zone()` below modifies `*addr`
-                // - caller's parameter `AsyncTcpClient::connect` is a local
-                // copy
+                // — `ip6_addr_assign_zone()` below modifies `*addr`
+                // — caller's parameter `AsyncTcpClient::connect` is a local
+                // copy.
 #if LWIP_IPV6
                 // Set zone so that link local addresses use the default
-                // interface
+                // interface.
                 if (IP_IS_V6(addr) &&
                     ip6_addr_lacks_zone(ip_2_ip6(addr), IP6_UNKNOWN)) {
                     ip6_addr_assign_zone(ip_2_ip6(addr), IP6_UNKNOWN,
                                          netif_default);
                 }
 #endif
-                err_t err = tcp_connect(_pcb, addr, port,
-                                        &TcpClientContext::_s_connected);
+                const err_t err =
+                    tcp_connect(_pcb, addr, port,
+                                reinterpret_cast<tcp_connected_fn>(
+                                    &TcpClientContext::_s_connected));
                 if (err != ERR_OK) {
                     DEBUGWIRE(":connect err %d\n", static_cast<int>(err));
-                    return 0;
+                    return err;
                 }
 
                 if (!_pcb) {
                     DEBUGWIRE(":cabrt\n");
-                    return 0;
+                    return ERR_ABRT;
                 }
                 DEBUGWIRE(":conn\n");
-                return 1;
+                return ERR_OK;
             }
 
             [[nodiscard]] size_t availableForWrite() const {
@@ -575,7 +577,6 @@ namespace async_tcp {
                 return isKeepAliveEnabled() ? _pcb->keep_cnt : 0;
             }
 
-
             void setOnConnectCallback(const std::function<void()> &cb) {
                 _connectCb = cb; // Set the success callback
             }
@@ -598,7 +599,8 @@ namespace async_tcp {
                 _closeCb = cb;
             }
 
-            void setOnWrittenCallback(const std::function<void(size_t bytes_written)> &cb) {
+            void setOnWrittenCallback(
+                const std::function<void(size_t bytes_written)> &cb) {
                 _writtenCb = cb;
             }
 
@@ -608,7 +610,7 @@ namespace async_tcp {
 
         protected:
             // store pending write buffers for async scheduling
-            const char* _datasource = nullptr;
+            const char *_datasource = nullptr;
             size_t _datalen = 0;
             // timestamp when the first write chunk was scheduled
             uint32_t _write_start_time = 0;
@@ -694,8 +696,7 @@ namespace async_tcp {
                                                        const int scale) const {
                 auto sbuf = static_cast<size_t>(tcp_sndbuf(_pcb));
                 DEBUGWIRE(":sbuf %d, rem %d, scale %d\n", sbuf, remaining, scale);
-                size_t chunk_size =
-                    std::min(sbuf, remaining);
+                size_t chunk_size = std::min(sbuf, remaining);
 
                 if (chunk_size > static_cast<size_t>(1 << scale)) {
                     chunk_size >>= scale;
@@ -718,7 +719,8 @@ namespace async_tcp {
             [[nodiscard]] uint8_t
             _get_write_flags(const size_t chunk_size,
                              const size_t remaining) const {
-                uint8_t flags = TCP_WRITE_FLAG_COPY;  // Always copy data for safety
+                uint8_t flags =
+                    TCP_WRITE_FLAG_COPY; // Always copy data for safety
                 if (chunk_size < remaining) {
                     flags |= TCP_WRITE_FLAG_MORE;
                 }
@@ -882,9 +884,8 @@ namespace async_tcp {
                 _notify_error();
             }
 
-            err_t _connected(const struct tcp_pcb *pcb, const err_t err) const {
+            err_t _connected(const tcp_pcb *pcb, const err_t err) const {
                 (void)err;
-                (void)pcb;
                 assert(pcb == _pcb && "Inconsistent _pcb");
                 _connectCb();
                 return ERR_OK;
@@ -909,7 +910,7 @@ namespace async_tcp {
                         reinterpret_cast<TcpClientContext *>(arg);
                     return context->_recv(tpcb, pb, err);
                 } else {
-                    return ERR_OK;
+                return ERR_OK;
                 }
             }
 
@@ -924,7 +925,7 @@ namespace async_tcp {
                     return reinterpret_cast<TcpClientContext *>(arg)
                         ->_poll(tpcb);
                 } else {
-                    return ERR_OK;
+                return ERR_OK;
                 }
             }
 
@@ -934,7 +935,7 @@ namespace async_tcp {
                     return reinterpret_cast<TcpClientContext *>(arg)
                         ->_acked(tpcb, len);
                 } else {
-                    return ERR_OK;
+                return ERR_OK;
                 }
             }
 
@@ -944,12 +945,12 @@ namespace async_tcp {
                     return reinterpret_cast<TcpClientContext *>(arg)
                         ->_connected(pcb, err);
                 } else {
-                    return ERR_OK;
+                return ERR_OK;
                 }
             }
 
         private:
-             tcp_pcb *_pcb;
+            tcp_pcb *_pcb;
 
             pbuf *_rx_buf;
             size_t _rx_buf_offset;
@@ -971,4 +972,4 @@ namespace async_tcp {
             std::function<void(size_t bytes_written)> _writtenCb;
             std::function<void()> _pollCb;
     };
-} // namespace AsyncTcp
+} // namespace async_tcp

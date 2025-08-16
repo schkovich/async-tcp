@@ -431,6 +431,9 @@ namespace async_tcp {
 
     void TcpClient::_onCloseCallback() const {
         DEBUGWIRE("[TcpClient][%d] TcpClient::_onCloseCallback(): Connection closed.\n", getClientId());
+        if (m_writer) {
+            m_writer->onError(ERR_CLSD); // Always notify writer on close
+        }
         if (_closed_callback_worker) {
             _closed_callback_worker->run();
         } else {

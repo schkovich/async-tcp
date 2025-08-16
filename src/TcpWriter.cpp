@@ -40,11 +40,7 @@ namespace async_tcp {
     }
 
     void TcpWriter::sendNextChunk() const {
-        if (!m_data) {
-            DEBUGWIRE("[TcpWriter] sendNextChunk called but no write in progress\n");
-            return;
-        }
-
+        assert(isWriteInProgress() && m_data && "sendNextChunk called but no write in progress");
         // Calculate chunk size (Assumes only one thread is calling
         // or modifying these members at a time. Remaining data to write)
         const auto chunk_size = m_total_size - m_written;
@@ -57,9 +53,8 @@ namespace async_tcp {
         TcpWriteHandler::create(m_ctx, chunk_data, chunk_size, m_io);
     }
 
-    void TcpWriter::onAckReceived(uint16_t ack_len) {
-        // ACKs should only arrive when a write is in progress
-        assert(isWriteInProgress() && "Received ACK but no write in progress - protocol violation");
+    void TcpWriter::onAckReceived(const uint16_t ack_len) {
+        assert(isWriteInProgress() && "ACK received but no write in progress");
 
         // Update progress based on ACKed bytes
         m_written += ack_len;
@@ -108,12 +103,13 @@ namespace async_tcp {
     }
 
     void TcpWriter::onWriteTimeout() {
-        const uint64_t elapsed_us = absolute_time_diff_us(m_write_start_time, get_absolute_time());
+        // Poll callback may call this periodically even if no write is in progress.
+        // Guard to ensure we only handle timeouts for active writes.
+        if (!isWriteInProgress() || m_write_start_time == nil_time) return;
 
+        const uint64_t elapsed_us = absolute_time_diff_us(m_write_start_time, get_absolute_time());
         DEBUGWIRE("[TcpWriter] Write operation timed out after %llu us, written: %zu/%zu bytes\n",
                elapsed_us, m_written, m_total_size);
-
-        // Clean up the timed-out write operation
         completeWrite();
     }
 

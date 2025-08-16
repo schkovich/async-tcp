@@ -636,10 +636,6 @@ namespace async_tcp {
                 return millis() - start_time > _timeout_ms;
             }
 
-            void _notify_error() {
-                // @todo: consider removing
-            }
-
             /**
              * @brief Write data from source buffer to TCP connection
              *
@@ -873,15 +869,21 @@ namespace async_tcp {
 
             void _error(const err_t err) {
                 DEBUGWIRE(":er %d 0x%%\n", static_cast<int>(err));
+                if (!_pcb) {
+                    // PCB already cleaned up
+                    return;
+                }
+                if (err == ERR_OK) {
+                    // No error, just return
+                    return;
+                }
                 tcp_arg(_pcb, nullptr);
                 tcp_sent(_pcb, nullptr);
                 tcp_recv(_pcb, nullptr);
                 tcp_err(_pcb, nullptr);
                 _pcb = nullptr;
-                (void)err;
 
                 _errorCb(err);
-                _notify_error();
             }
 
             err_t _connected(const tcp_pcb *pcb, const err_t err) const {

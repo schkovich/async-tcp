@@ -15,11 +15,11 @@
 
 namespace async_tcp {
 
-    TcpWriteHandler::TcpWriteHandler(const AsyncCtx & ctx,
+    TcpWriteHandler::TcpWriteHandler(const AsyncCtx& ctx,
                                      const uint8_t* data,
-                                     size_t size,
+                                     const size_t size,
                                      TcpClient& io)
-            : EventBridge(ctx), m_data(data), m_size(size), m_io(io) {
+            : EventBridge(ctx), m_io(io), m_data(data), m_size(size) {
     }
 
     void TcpWriteHandler::onWork() {

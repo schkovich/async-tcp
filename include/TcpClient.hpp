@@ -421,7 +421,7 @@ namespace async_tcp {
 
             void _onCloseCallback() const;
 
-            void _onErrorCallback(err_t err);
+            void _onErrorCallback(err_t err) const;
 
             void _onReceiveCallback(std::unique_ptr<int> size) const;
 

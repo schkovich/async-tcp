@@ -12,8 +12,10 @@
 #pragma once
 
 #include "ContextManager.hpp"
-#include "pico/time.h"
+
+#include <Arduino.h>
 #include <atomic>
+#include <lwip/err.h>
 #include <memory>
 
 namespace async_tcp {
@@ -30,7 +32,7 @@ namespace async_tcp {
      * TCP send buffer.
      */
     class TcpWriter final {
-        private:
+
             static constexpr uint64_t WRITE_TIMEOUT_US = 5000000;  ///< Write timeout in microseconds (5 seconds)
 
             const AsyncCtx & m_ctx;           ///< Context manager for worker execution
@@ -85,6 +87,8 @@ namespace async_tcp {
              * Called by TcpClient when ACK is received from remote peer
              */
             void onAckReceived(uint16_t ack_len);
+
+            void onError(err_t error);
 
             /**
              * @brief Check if the current write operation has timed out

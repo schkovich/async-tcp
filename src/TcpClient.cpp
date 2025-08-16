@@ -440,10 +440,11 @@ namespace async_tcp {
         }
     }
 
-    void TcpClient::_onErrorCallback(err_t err) {
+    void TcpClient::_onErrorCallback(const err_t err) const {
         DEBUGWIRE("The ctx failed with the error code: %d", err);
-        // TODO: Implement proper error handling based on error type
-        // instead of always closing the connection
+        if (m_writer) {
+            m_writer->onError(err);
+        }
     }
 
     void TcpClient::_onReceiveCallback(std::unique_ptr<int> size) const {

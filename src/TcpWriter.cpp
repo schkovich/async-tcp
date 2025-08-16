@@ -45,7 +45,8 @@ namespace async_tcp {
             return;
         }
 
-        // Calculate chunk size (remaining data to write)
+        // Calculate chunk size (Assumes only one thread is calling
+        // or modifying these members at a time. Remaining data to write)
         const auto chunk_size = m_total_size - m_written;
         const auto chunk_data = m_data.get() + m_written;
 
@@ -78,6 +79,12 @@ namespace async_tcp {
 
         // Continue with next chunk if more data needs to be sent
         sendNextChunk();
+    }
+
+    void TcpWriter::onError(const err_t error) {
+        // Handle error — reset state
+        DEBUGWIRE("[TcpWriter] Error %d occurred, resetting write state\n", error);
+        completeWrite();
     }
 
     void TcpWriter::completeWrite() {

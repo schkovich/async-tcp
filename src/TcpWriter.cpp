@@ -39,7 +39,7 @@ namespace async_tcp {
         sendNextChunk();
     }
 
-    void TcpWriter::sendNextChunk() {
+    void TcpWriter::sendNextChunk() const {
         if (!m_data) {
             DEBUGWIRE("[TcpWriter] sendNextChunk called but no write in progress\n");
             return;

@@ -107,7 +107,7 @@ namespace async_tcp {
              * @brief Send the next chunk of data
              * Internal method to handle chunked transmission
              */
-            void sendNextChunk();
+            void sendNextChunk() const;
 
             /**
              * @brief Complete the write operation and cleanup state

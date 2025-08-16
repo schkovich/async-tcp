@@ -73,7 +73,7 @@ namespace async_tcp {
         return make_unique<TcpClient>(*this);
     }
 
-    TcpClient::TcpClient(const TcpClient &other) {
+    TcpClient::TcpClient(const TcpClient &other)  : Client(other), SList(other) {
         _ctx = other._ctx;
         _timeout = other._timeout;
         _localPort = localPort();
@@ -108,9 +108,8 @@ namespace async_tcp {
 
         return *this;
     }
-    int TcpClient::connect(const char *host, uint16_t port) {
-        AIPAddress remote_addr;
-        if (hostByName(
+    int TcpClient::connect(const char *host, const uint16_t port) {
+        if (AIPAddress remote_addr; hostByName(
                 host, remote_addr,
                 static_cast<int>(_ctx->getTimeout()))) { // from WiFiClient
             return connect(remote_addr, port);
@@ -118,7 +117,7 @@ namespace async_tcp {
         return 0;
     }
 
-    int TcpClient::connect(const AString &host, uint16_t port) {
+    int TcpClient::connect(const AString &host, const uint16_t port) {
         return connect(host.c_str(), port);
     }
 
@@ -131,7 +130,7 @@ namespace async_tcp {
 
         tcp_pcb *pcb = tcp_new();
         if (!pcb) {
-            DEBUGWIRE("No PCB\n");
+            DEBUGWIRE("[TcpClient][%d] No PCB\n", getClientId());
             return 0;
         }
 
@@ -141,6 +140,7 @@ namespace async_tcp {
 
         _ctx = new TcpClientContext(pcb, nullptr, nullptr);
         _ctx->ref();
+        _ctx->setClientId(getClientId());
         _ctx->setTimeout(_timeout);
         _ctx->setOnConnectCallback([this] { _onConnectCallback(); });
         _ctx->setOnCloseCallback([this] { _onCloseCallback(); });
@@ -159,7 +159,7 @@ namespace async_tcp {
         });
 
         if (const auto res = _ctx->connect(ip, port); res != ERR_OK) {
-            DEBUGWIRE("Client did not menage to connect.\n");
+            DEBUGWIRE("[TcpClient][%d] Client did not menage to connect.\n", getClientId());
             _ctx->unref();
             _ctx = nullptr;
             return 0;
@@ -185,19 +185,19 @@ namespace async_tcp {
     }
 
     int TcpClient::availableForWrite() {
-        return _ctx ? _ctx->availableForWrite() : 0;
+        return _ctx ? static_cast<int>(_ctx->availableForWrite()) : 0;
     }
 
-    size_t TcpClient::write(uint8_t b) { return write(&b, 1); }
+    size_t TcpClient::write(const uint8_t b) { return write(&b, 1); }
 
-    size_t TcpClient::write(const uint8_t *buf, size_t size) {
+    size_t TcpClient::write(const uint8_t *buf, const size_t size) {
         assert(_ctx && "TcpClient context must be valid");
         assert(size > 0 && "Write size must be non-zero");
         assert(m_writer && "TcpWriter must be configured for async operations");
 
         // Atomically check if no write is in progress and set it to true if so
         if (bool expected = false; !m_writer->tryStartWrite(expected)) {
-            DEBUGWIRE("[TcpClient] Write operation already in progress, rejecting new write\n");
+            DEBUGWIRE("[TcpClient][%d] RESOURCE_IN_USE\n", getClientId());
             return PICO_ERROR_RESOURCE_IN_USE;
         }
 
@@ -218,7 +218,7 @@ namespace async_tcp {
         return _ctx->write(stream);
     }
 
-    void TcpClient::writeChunk(const uint8_t* data, size_t size) {
+    void TcpClient::writeChunk(const uint8_t* data, const size_t size) const {
         if (!_ctx || !data || size == 0) {
             return;
         }
@@ -230,9 +230,7 @@ namespace async_tcp {
             return 0;
         }
 
-        int result = _ctx->getSize();
-
-        return result;
+        return static_cast<int>(_ctx->getSize());
     }
 
     int TcpClient::read() {
@@ -242,12 +240,12 @@ namespace async_tcp {
         return _ctx->read();
     }
 
-    int TcpClient::read(uint8_t *buf, size_t size) {
+    int TcpClient::read(uint8_t *buf, const size_t size) {
         return static_cast<int>(
             _ctx->read(reinterpret_cast<char *>(buf), size));
     }
 
-    int TcpClient::read(char *buf, size_t size) const {
+    int TcpClient::read(char *buf, const size_t size) const {
         return static_cast<int>(_ctx->read(buf, size));
     }
 
@@ -279,7 +277,7 @@ namespace async_tcp {
         return _ctx->peekAvailable();
     }
 
-    void TcpClient::peekConsume(size_t size) const {
+    void TcpClient::peekConsume(const size_t size) const {
         if (!_ctx) {
             return;
         }
@@ -294,10 +292,10 @@ namespace async_tcp {
         if (maxWaitMs == 0) {
             maxWaitMs = ASYNC_TCP_CLIENT_MAX_FLUSH_WAIT_MS;
         }
-        return _ctx->wait_until_acked(maxWaitMs);
+        return _ctx->wait_until_acked(static_cast<int>(maxWaitMs));
     }
 
-    bool TcpClient::stop(unsigned int maxWaitMs) const {
+    bool TcpClient::stop(const unsigned int maxWaitMs) const {
         if (!_ctx) {
             return true;
         }
@@ -368,10 +366,10 @@ namespace async_tcp {
         }
     }
 
-    [[maybe_unused]] void TcpClient::stopAllExcept(TcpClient *except) {
+    [[maybe_unused]] void TcpClient::stopAllExcept(const TcpClient *client) {
         // Stop all will look at the lowest-level wrapper connections only
-        while (except->_owned) {
-            except = except->_owned;
+        while (client->_owned) {
+            client = client->_owned;
         }
         for (TcpClient *it = _s_first; it; it = it->_next) {
             TcpClient *conn = it;
@@ -379,14 +377,14 @@ namespace async_tcp {
             while (conn->_owned) {
                 conn = conn->_owned;
             }
-            if (conn != except) {
+            if (conn != client) {
                 conn->stop();
             }
         }
     }
 
-    void TcpClient::keepAlive(uint16_t idle_sec, uint16_t intv_sec,
-                                   uint8_t count) const {
+    void TcpClient::keepAlive(const uint16_t idle_sec, const uint16_t intv_sec,
+                              const uint8_t count) const {
         _ctx->keepAlive(idle_sec, intv_sec, count);
     }
 
@@ -422,26 +420,26 @@ namespace async_tcp {
     void TcpClient::_onConnectCallback() const {
         const AIPAddress remote_ip = remoteIP();
         (void)remote_ip;
-        DEBUGWIRE("TcpClient::_onConnectCallback(): Connected to %s.\n",
+        DEBUGWIRE("[TcpClient][%d] TcpClient::_onConnectCallback(): Connected to %s.\n", getClientId(),
                   remote_ip.toString().c_str());
         if (_connected_callback_worker) {
             _connected_callback_worker->run();
         } else {
-            DEBUGWIRE("TcpClient::_onConnectCallback: No event handler\n");
+            DEBUGWIRE("[TcpClient][%d] TcpClient::_onConnectCallback: No event handler\n", getClientId());
         }
     }
 
     void TcpClient::_onCloseCallback() const {
-        DEBUGWIRE("TcpClient::_onCloseCallback(): Connection closed.\n");
+        DEBUGWIRE("[TcpClient][%d] TcpClient::_onCloseCallback(): Connection closed.\n", getClientId());
         if (_closed_callback_worker) {
             _closed_callback_worker->run();
         } else {
-            DEBUGWIRE("TcpClient::_onCloseCallback: No event handler\n");
+            DEBUGWIRE("[TcpClient][%d] TcpClient::_onCloseCallback: No event handler\n", getClientId());
         }
     }
 
     void TcpClient::_onErrorCallback(const err_t err) const {
-        DEBUGWIRE("The ctx failed with the error code: %d", err);
+        DEBUGWIRE("[TcpClient][%d] The ctx failed with the error code: %d", getClientId(), err);
         if (m_writer) {
             m_writer->onError(err);
         }
@@ -451,19 +449,19 @@ namespace async_tcp {
         if (_received_callback_worker) {
             _received_callback_worker->run();
         } else {
-            DEBUGWIRE("TcpClient::_onReceiveCallback: No event handler\n");
+            DEBUGWIRE("[TcpClient][%d] TcpClient::_onReceiveCallback: No event handler\n", getClientId());
         }
     }
 
-    void TcpClient::_onAckCallback(struct tcp_pcb *tpcb,
-                                     uint16_t len) const {
+    void TcpClient::_onAckCallback(const struct tcp_pcb *tpcb,
+                                   const uint16_t len) const {
         (void)tpcb;  // PCB parameter not needed
 
         // If writer is configured, delegate ACK handling to it
         if (m_writer) {
             m_writer->onAckReceived(len);
         } else {
-            DEBUGWIRE("TcpClient::_onAckCallback: ACK received for %u bytes but no writer configured\n", len);
+            DEBUGWIRE("[TcpClient][%d] TcpClient::_onAckCallback: ACK received for %u bytes but no writer configured\n", getClientId(), len);
         }
     }
 
@@ -471,13 +469,14 @@ namespace async_tcp {
         m_writer = std::move(writer);
     }
 
-    bool TcpClient::checkAndHandleWriteTimeout() {
+    void TcpClient::setSyncAccessor(TcpClientSyncAccessorPtr accessor) {
+        m_sync_accessor = std::move(accessor);
+    }
+
+    void TcpClient::checkAndHandleWriteTimeout() const {
 
         if (m_writer && m_writer->hasTimedOut()) {
             m_writer->onWriteTimeout();
-            return true;  // Timeout was detected and handled
         }
-
-        return false;  // No timeout
     }
 } // namespace AsyncTcp

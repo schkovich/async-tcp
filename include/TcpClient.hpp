@@ -108,8 +108,6 @@ namespace async_tcp {
              * reference count for the context using `ref()`, and adds the new
              * object to the `SList`.
              *
-             * @param other The `AsyncTcpClient` object to copy from.
-             *
              * @note
              * - The internal context (`_ctx`) is shared between the two
              * instances, and its reference count is incremented to ensure
@@ -131,7 +129,6 @@ namespace async_tcp {
              * It also copies other relevant internal properties such as
              * timeouts and ownership state.
              *
-             * @param other The source AsyncTcpClient object to assign from.
              * @return AsyncTcpClient& A reference to the updated AsyncTcpClient
              * object.
              *
@@ -288,7 +285,7 @@ namespace async_tcp {
              * @param data Pointer to binary data to write
              * @param size Size of data chunk
              */
-            void writeChunk(const uint8_t* data, size_t size);
+            void writeChunk(const uint8_t* data, size_t size) const;
 
             int available() override;
 
@@ -350,7 +347,7 @@ namespace async_tcp {
 
             [[maybe_unused]] static void stopAll();
 
-            [[maybe_unused]] static void stopAllExcept(TcpClient *c);
+            [[maybe_unused]] static void stopAllExcept(const TcpClient *client);
 
             void
             keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC,
@@ -397,6 +394,12 @@ namespace async_tcp {
             void setWriter(TcpWriterPtr writer);
 
             /**
+             * @brief Set the client ID for this TcpClient instance.
+             * @param id The client ID to assign (uint8_t)
+             */
+            void setClientId(const uint8_t id) { m_client_id = id; }
+
+            /**
              * @brief Set the sync accessor for this TcpClient instance.
              * @param accessor Unique pointer to TcpClientSyncAccessor instance
              */
@@ -417,6 +420,9 @@ namespace async_tcp {
             TcpWriterPtr m_writer{};  ///< Writer for chunked operations
             TcpClientSyncAccessorPtr m_sync_accessor; ///< Sync accessor for thread-safe operations
 
+            // --- Client ID for logging and traceability ---
+            uint8_t m_client_id = 0; // Smallest integer type for client id
+
             void _onConnectCallback() const;
 
             void _onCloseCallback() const;
@@ -425,9 +431,14 @@ namespace async_tcp {
 
             void _onReceiveCallback(std::unique_ptr<int> size) const;
 
-            void _onAckCallback(tcp_pcb *tpcb, uint16_t len) const;
-            bool checkAndHandleWriteTimeout();
+            void _onAckCallback(const tcp_pcb *tpcb, uint16_t len) const;
+            void checkAndHandleWriteTimeout() const;
         private:
             virtual uint8_t _ts_status();
+            /**
+             * @brief Get the client ID (for internal logging)
+             * @return uint8_t client id
+             */
+            [[nodiscard]] uint8_t getClientId() const { return m_client_id; }
     };
 } // namespace AsyncTcp

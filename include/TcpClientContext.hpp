@@ -43,15 +43,12 @@ namespace async_tcp {
                 : _pcb(pcb), _rx_buf(nullptr), _rx_buf_offset(0),
                   _discard_cb(discard_cb), _discard_cb_arg(discard_cb_arg),
                   _ref_cnt(0), _next(nullptr) {
-                // Removed _sync initialization - sync mode is redundant and dangerous
                 tcp_setprio(_pcb, TCP_PRIO_MIN);
                 tcp_arg(_pcb, this);
-                tcp_recv(_pcb, &_s_recv);
+                tcp_recv(_pcb, reinterpret_cast<tcp_recv_fn>(&_s_recv));
                 tcp_sent(_pcb, &_s_acked);
                 tcp_err(_pcb, &_s_error);
-                tcp_poll(_pcb, &_s_poll, 1);
-                // keep-alive not enabled by default
-                // keepAlive();
+                tcp_poll(_pcb, reinterpret_cast<tcp_poll_fn>(&_s_poll), 1);
             }
 
             [[maybe_unused]] [[nodiscard]] tcp_pcb *getPCB() const {
@@ -60,7 +57,7 @@ namespace async_tcp {
 
             err_t abort() {
                 if (_pcb) {
-                    DEBUGWIRE(":abort\n");
+                    DEBUGWIRE("[:i%d] :abort\n", getClientId());
                     tcp_arg(_pcb, nullptr);
                     tcp_sent(_pcb, nullptr);
                     tcp_recv(_pcb, nullptr);
@@ -75,7 +72,7 @@ namespace async_tcp {
             err_t close() {
                 err_t err = ERR_OK;
                 if (_pcb) {
-                    DEBUGWIRE(":close\n");
+                    DEBUGWIRE("[:i%d] :close\n", getClientId());
                     tcp_arg(_pcb, nullptr);
                     tcp_sent(_pcb, nullptr);
                     tcp_recv(_pcb, nullptr);
@@ -83,7 +80,8 @@ namespace async_tcp {
                     tcp_poll(_pcb, nullptr, 0);
                     err = tcp_close(_pcb);
                     if (err != ERR_OK) {
-                        DEBUGWIRE(":tc err %d\n", static_cast<int>(err));
+                        DEBUGWIRE("[:i%d] :tc err %d\n", getClientId(),
+                                  static_cast<int>(err));
                         tcp_abort(_pcb);
                         err = ERR_ABRT;
                     }
@@ -103,18 +101,18 @@ namespace async_tcp {
 
             void ref() {
                 ++_ref_cnt;
-                DEBUGWIRE(":ref %d\n", _ref_cnt);
+                DEBUGWIRE("[:i%d] :ref %d\n", getClientId(), _ref_cnt);
             }
 
             void unref() {
-                DEBUGWIRE(":ur %d\n", _ref_cnt);
+                DEBUGWIRE("[:i%d] :ur %d\n", getClientId(), _ref_cnt);
                 if (--_ref_cnt == 0) {
                     discard_received();
                     close();
                     if (_discard_cb) {
                         _discard_cb(_discard_cb_arg, this);
                     }
-                    DEBUGWIRE(":del\n");
+                    DEBUGWIRE("[:i%d] :del\n", getClientId());
                     delete this;
                 }
             }
@@ -138,15 +136,16 @@ namespace async_tcp {
                                 reinterpret_cast<tcp_connected_fn>(
                                     &TcpClientContext::_s_connected));
                 if (err != ERR_OK) {
-                    DEBUGWIRE(":connect err %d\n", static_cast<int>(err));
+                    DEBUGWIRE("[:i%d] :connect err %d\n", getClientId(),
+                              static_cast<int>(err));
                     return err;
                 }
 
                 if (!_pcb) {
-                    DEBUGWIRE(":cabrt\n");
+                    DEBUGWIRE("[:i%d] :cabrt\n", getClientId());
                     return ERR_ABRT;
                 }
-                DEBUGWIRE(":conn\n");
+                DEBUGWIRE("[:i%d] :conn\n", getClientId());
                 return ERR_OK;
             }
 
@@ -223,21 +222,21 @@ namespace async_tcp {
              * @brief Reads a single byte from the internal receive buffer.
              *
              * This method retrieves one byte from the internal receive buffer
-             * and advances the buffer offset by one. If the receive buffer is
+             * and advances the buffer offset by one. If the buffer is
              * empty, the method returns 0.
              *
-             * @return The byte read from the receive buffer, or 0 if the buffer
-             * is empty.
+             * @return The byte read from the internal receive buffer, or 0 if
+             * the buffer is empty.
              *
              * @note This method is not thread-safe. Ensure that appropriate
              * synchronization mechanisms are used if this method is called from
              * multiple threads.
              *
-             * @warning If the receive buffer is empty, this method will return
+             * @warning If the buffer is empty, this method will return
              * 0.
              */
             char read() {
-                char c = peek();
+                const char c = peek();
                 if (c != 0) {
                     _consume(1);
                 }
@@ -245,13 +244,13 @@ namespace async_tcp {
             }
 
             /**
-             * @brief Reads data from the receive buffer into the provided
+             * @brief Reads data from the LwIP receive buffer into the provided
              * destination buffer.
              *
              * This method attempts to read up to `size` bytes from the internal
              * receive buffer into the buffer pointed to by `dst`. The actual
              * number of bytes read may be less than `size` if there is less
-             * data available in the receive buffer.
+             * data available in the internal receive buffer.
              *
              * @param dst Pointer to the destination buffer where the data will
              * be copied.
@@ -264,25 +263,25 @@ namespace async_tcp {
              * synchronization mechanisms are used if this method is called from
              * multiple threads.
              *
-             * @warning If the receive buffer is empty, this method will return
+             * @warning If the buffer is empty, this method will return
              * 0.
              */
             size_t read(char *dst, size_t size) {
-                if (!dst || size == 0) {
-                    DEBUGWIRE(":read invalid parameters\n");
-                    return 0;
+                assert(dst);
+                if (size == 0) {
+                    return size;
                 }
 
                 // Get the total amount of data available for reading
-                size_t max_size = getSize();
+                const auto max_size = getSize();
                 // Limit size to available data
                 size = std::min(size, max_size);
 
-                DEBUGWIRE(":rd %d, %d, %d\n", size, _rx_buf->tot_len,
-                          _rx_buf_offset);
+                DEBUGWIRE("[:i%d] :rd %d, %d, %d\n", getClientId(), size,
+                          _rx_buf->tot_len, _rx_buf_offset);
                 size_t size_read = 0;
 
-                // Keep reading from the buffer while there's data to read
+                // Keep reading from the buffer while there's data to read.
                 while (size > 0) {
                     // Use peekBytes to copy data into the destination buffer
                     const size_t copy_size = peekBytes(dst, size);
@@ -312,7 +311,7 @@ namespace async_tcp {
              */
 
             /**
-             * @brief Peek at the next byte in the receive buffer
+             * @brief Peek at the next byte in the internal receive buffer
              * @return The next byte, or 0 if buffer is empty
              * @note Does not consume the byte
              */
@@ -340,11 +339,12 @@ namespace async_tcp {
                 const size_t max_size = getSize();
                 size = (size < max_size) ? size : max_size;
 
-                DEBUGWIRE(":pd %d, %d, %d\n", size, _rx_buf->tot_len,
-                          _rx_buf_offset);
+                DEBUGWIRE("[:i%d] :pd %d, %d, %d\n", getClientId(), size,
+                          _rx_buf->tot_len, _rx_buf_offset);
                 const size_t buf_size = peekAvailable();
                 const size_t copy_size = (size < buf_size) ? size : buf_size;
-                DEBUGWIRE(":rpi %d, %d\n", buf_size, copy_size);
+                DEBUGWIRE("[:i%d] :rpi %d, %d\n", getClientId(), buf_size,
+                          copy_size);
                 memcpy(dst,
                        static_cast<char *>(_rx_buf->payload) + _rx_buf_offset,
                        copy_size);
@@ -389,7 +389,8 @@ namespace async_tcp {
             void peekConsume(const size_t consume) { _consume(consume); }
 
             void discard_received() {
-                DEBUGWIRE(":dsrcv %d\n", _rx_buf ? _rx_buf->tot_len : 0);
+                DEBUGWIRE("[:i%d] :dsrcv %d\n", getClientId(),
+                          _rx_buf ? _rx_buf->tot_len : 0);
                 if (!_rx_buf) {
                     return;
                 }
@@ -401,12 +402,13 @@ namespace async_tcp {
                 _rx_buf_offset = 0;
             }
 
-            bool wait_until_acked(
-                int max_wait_ms = ASYNC_TCP_CLIENT_MAX_FLUSH_WAIT_MS) {
+            [[nodiscard]] bool
+            wait_until_acked(const int max_wait_ms =
+                                 ASYNC_TCP_CLIENT_MAX_FLUSH_WAIT_MS) const {
                 // https://github.com/esp8266/Arduino/pull/3967#pullrequestreview-83451496
                 // option 1 done
                 // option 2 / _write_some() not necessary since _datasource is
-                // always nullptr here
+                // always nullptr here.
 
                 if (!_pcb) {
                     return true;
@@ -414,32 +416,32 @@ namespace async_tcp {
 
                 int prevsndbuf = -1;
 
-                // wait for peer's acks to flush lwIP's output buffer
+                // wait for a peer's ACKs to flush lwIP's output buffer,
                 uint32_t last_sent = millis();
                 while (true) {
                     if (millis() - last_sent >
                         static_cast<uint32_t>(max_wait_ms)) {
                         // wait until sent: timeout
-                        DEBUGWIRE(":wustmo\n");
+                        DEBUGWIRE("[:i%d] :wustmo\n", getClientId());
                         // All data not flushed, timeout hit
                         return false;
                     }
 
-                    if (!_pcb) {
-                        return false;
+                    if (!_pcb) { // NOLINT
+                        // No PCB, connection closed
+                        DEBUGWIRE("[:i%d] :wustpcb\n", getClientId());
+                        return false; // NOLINT
                     }
                     // force lwIP to send what can be sent
                     tcp_output(_pcb);
 
-                    int sndbuf = tcp_sndbuf(_pcb);
+                    const int sndbuf = tcp_sndbuf(_pcb);
                     if (sndbuf != prevsndbuf) {
                         // send buffer has changed (or first iteration)
                         prevsndbuf = sndbuf;
                         // We just sent a bit, move timeout forward
                         last_sent = millis();
                     }
-
-                    // esp_yield(); // from sys or os context
 
                     if ((state() != ESTABLISHED) || (sndbuf == TCP_SND_BUF)) {
                         // peer has closed or all bytes are sent and acked
@@ -479,21 +481,21 @@ namespace async_tcp {
                 uint8_t buff[256];
                 while (stream.available()) {
                     // Stream only lets you read 1 byte at a time, so buffer in
-                    // local copy
+                    // a local copy.
                     size_t i;
                     for (i = 0; (i < sizeof(buff)) && stream.available(); i++) {
                         buff[i] = stream.read();
                     }
                     if (i) {
                         // Send as a single packet
-                        size_t len =
-                            write(reinterpret_cast<const char *>(buff), i);
+                        const size_t len =
+                            write(reinterpret_cast<const char *>(buff), i); // NOLINT
                         sent += len;
                         if (len != static_cast<int>(i)) {
-                            break; // Write error...
+                            break; // Write error…
                         }
                     } else {
-                        // Out of data...
+                        // Out of data…
                         break;
                     }
                 }
@@ -503,14 +505,14 @@ namespace async_tcp {
             /**
              * @brief Write a single chunk directly to TCP connection
              *
-             * This method bypasses _write_from_source and _write_some completely,
-             * directly calling tcp_write() for a single chunk. Used by the new
-             * worker-based write system.
+             * This method bypasses _write_from_source and _write_some
+             * completely, directly calling tcp_write() for a single chunk. Used
+             * by the new worker-based write system.
              *
              * @param data Pointer to binary data to write
              * @param size Size of data chunk
              */
-            void writeChunk(const uint8_t* data, size_t size) {
+            void writeChunk(const uint8_t *data, const size_t size) const {
                 if (!_pcb) {
                     // No PCB — connection not established or closed
                     _errorCb(ERR_CONN);
@@ -524,20 +526,20 @@ namespace async_tcp {
                 }
 
                 // Calculate chunk size.
-                auto sbuf = static_cast<size_t>(tcp_sndbuf(_pcb));
-                auto chunk_size = std::min(sbuf, size);
+                const auto sbuf = static_cast<size_t>(tcp_sndbuf(_pcb));
+                const auto chunk_size = std::min(sbuf, size);
 
                 if (chunk_size == 0) {
-                    // Buffer space not available — this constitutes an ERR_MEM condition.
+                    // Buffer space not available — this constitutes an ERR_MEM
+                    // condition.
                     _errorCb(ERR_MEM);
                     return;
                 }
 
                 // Direct tcp_write call
-                const auto err = tcp_write(_pcb, data, chunk_size, 0);
-
-                if (err != ERR_OK) {
-                    // Error - notify integration layer via callback
+                if (const auto err = tcp_write(_pcb, data, chunk_size, 0);
+                    err != ERR_OK) {
+                    // Error — notify integration layer via callback
                     _errorCb(err);
                     return;
                 }
@@ -545,10 +547,10 @@ namespace async_tcp {
                 tcp_output(_pcb); // Ensure data is sent immediately
             }
 
-            void
-            keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC,
-                      uint16_t intv_sec = TCP_DEFAULT_KEEP_ALIVE_INTERVAL_SEC,
-                      uint8_t count = TCP_DEFAULT_KEEP_ALIVE_COUNT) {
+            void keepAlive(
+                const uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC,
+                const uint16_t intv_sec = TCP_DEFAULT_KEEP_ALIVE_INTERVAL_SEC,
+                const uint8_t count = TCP_DEFAULT_KEEP_ALIVE_COUNT) const {
                 if (idle_sec && intv_sec && count) {
                     _pcb->so_options |= SOF_KEEPALIVE;
                     _pcb->keep_idle = static_cast<uint32_t>(1000) * idle_sec;
@@ -608,6 +610,12 @@ namespace async_tcp {
                 _pollCb = cb;
             }
 
+            /**
+             * @brief Set the client ID for this TcpClientContext instance.
+             * @param id The client ID to assign (uint8_t)
+             */
+            void setClientId(const uint8_t id) { m_client_id = id; }
+
         protected:
             // store pending write buffers for async scheduling
             const char *_datasource = nullptr;
@@ -625,14 +633,15 @@ namespace async_tcp {
              *
              * @param start_time The timestamp (in milliseconds) when the
              * operation started
-             * @return true if the operation has timed out (elapsed time >
+             * @return `true` if the operation has timed out (elapsed time >
              * timeout)
-             * @return false if the operation is still within the timeout window
+             * @return `false` if the operation is still within the timeout
+             * window.
              *
-             * @note Uses millis() for time measurement which wraps around every
-             * ~49 days
+             * @note Uses millis() for time measurement, which wraps around
+             * every ~49 days.
              */
-            [[nodiscard]] bool _is_timeout(uint32_t start_time) const {
+            [[nodiscard]] bool _is_timeout(const uint32_t start_time) const {
                 return millis() - start_time > _timeout_ms;
             }
 
@@ -654,8 +663,9 @@ namespace async_tcp {
                 _written = 0;
                 // record write start for timeout
                 _write_start_time = millis();
-                bool ok = _write_some(_datasource, _datalen, &_written);
-                if (!ok) {
+                if (const bool ok =
+                        _write_some(_datasource, _datalen, &_written);
+                    !ok) {
                     // nothing sent, abort scheduling
                     _datasource = nullptr;
                     _datalen = 0;
@@ -667,9 +677,9 @@ namespace async_tcp {
             /**
              * @brief Check if TCP connection is valid
              *
-             * @return true Connection is valid (_pcb exists and state is not
+             * @return `true` Connection is valid (_pcb exists and state is not
              * CLOSED)
-             * @return false Connection is invalid
+             * @return `false` Connection is invalid
              *
              * This function checks both the existence of PCB and connection
              * state to determine if TCP operations can be performed.
@@ -690,8 +700,9 @@ namespace async_tcp {
              */
             [[nodiscard]] size_t _calculate_chunk_size(const size_t remaining,
                                                        const int scale) const {
-                auto sbuf = static_cast<size_t>(tcp_sndbuf(_pcb));
-                DEBUGWIRE(":sbuf %d, rem %d, scale %d\n", sbuf, remaining, scale);
+                const auto sbuf = static_cast<size_t>(tcp_sndbuf(_pcb));
+                DEBUGWIRE("[:i%d] :sbuf %d, rem %d, scale %d\n", getClientId(),
+                          sbuf, remaining, scale);
                 size_t chunk_size = std::min(sbuf, remaining);
 
                 if (chunk_size > static_cast<size_t>(1 << scale)) {
@@ -709,12 +720,10 @@ namespace async_tcp {
              * @return uint8_t Combined TCP write flags
              *
              * This function determines if TCP_WRITE_FLAG_MORE should be set
-             * (more data coming) and if TCP_WRITE_FLAG_COPY should be set
-             * (based on sync mode).
+             * (more data coming) and if TCP_WRITE_FLAG_COPY should be set.
              */
-            [[nodiscard]] uint8_t
-            _get_write_flags(const size_t chunk_size,
-                             const size_t remaining) const {
+            static uint8_t _get_write_flags(const size_t chunk_size,
+                                            const size_t remaining) {
                 uint8_t flags =
                     TCP_WRITE_FLAG_COPY; // Always copy data for safety
                 if (chunk_size < remaining) {
@@ -729,8 +738,8 @@ namespace async_tcp {
              * @param datasource Source data buffer
              * @param data_len Total length of data
              * @param written Pointer to track number of bytes written
-             * @return true If any data was written
-             * @return false If no data could be written
+             * @return `true` If any data was written
+             * @return `false` If no data could be written
              *
              * This function attempts to write data in chunks, handling TCP
              * buffer constraints and memory limitations through scaling
@@ -742,7 +751,8 @@ namespace async_tcp {
                     return false;
                 }
 
-                DEBUGWIRE(":wr %d %d\n", data_len - *written, *written);
+                DEBUGWIRE("[:i%d] :wr %d %d\n", getClientId(),
+                          data_len - *written, *written);
 
                 bool has_written = false;
                 int scale = 0;
@@ -765,7 +775,8 @@ namespace async_tcp {
                     const err_t err = tcp_write(_pcb, &datasource[*written],
                                                 next_chunk_size, flags);
 
-                    DEBUGWIRE(":wrc %d %d %d\n", next_chunk_size, remaining,
+                    DEBUGWIRE("[:i%d] :wrc %d %d %d\n", getClientId(),
+                              next_chunk_size, remaining,
                               static_cast<int>(err));
 
                     if (err == ERR_OK) {
@@ -789,38 +800,32 @@ namespace async_tcp {
                 return has_written;
             }
 
-            //    void _write_some_from_cb() {
-            //        if (_send_waiting) {
-            //            // resume _write_from_source
-            //            _send_waiting = false;
-            //            //esp_schedule();
-            //        }
-            //    }
-
-            err_t _acked(tcp_pcb *pcb, uint16_t len) {
-                (void)pcb;
+            err_t _acked(tcp_pcb *pcb, const uint16_t len) const {
                 // Notify the integration layer via a callback.
-                // The integration layer (e5::TcpAckHandler) will handle the chunking policy.
+                // The integration layer (e5::TcpAckHandler) will handle the
+                // chunking policy.
                 if (_ackCb) {
                     _ackCb(pcb, len);
                 }
                 return ERR_OK;
             }
 
-            void _consume(size_t size) {
-                ptrdiff_t left = _rx_buf->len - _rx_buf_offset - size;
-                if (left > 0) {
+            void _consume(const size_t size) {
+                if (const auto left = static_cast<ptrdiff_t>(
+                        _rx_buf->len - _rx_buf_offset - size);
+                    left > 0) {
                     _rx_buf_offset += size;
                 } else if (!_rx_buf->next) {
-                    DEBUGWIRE(":c0 %d, %d\n", size, _rx_buf->tot_len);
-                    auto head = _rx_buf;
+                    DEBUGWIRE("[:i%d] :c0 %d, %d\n", getClientId(), size,
+                              _rx_buf->tot_len);
+                    const auto head = _rx_buf;
                     _rx_buf = nullptr;
                     _rx_buf_offset = 0;
                     pbuf_free(head);
                 } else {
-                    DEBUGWIRE(":c %d, %d, %d\n", size, _rx_buf->len,
-                              _rx_buf->tot_len);
-                    auto head = _rx_buf;
+                    DEBUGWIRE("[:i%d] :c %d, %d, %d\n", getClientId(), size,
+                              _rx_buf->len, _rx_buf->tot_len);
+                    const auto head = _rx_buf;
                     _rx_buf = _rx_buf->next;
                     _rx_buf_offset = 0;
                     pbuf_ref(_rx_buf);
@@ -831,14 +836,14 @@ namespace async_tcp {
                 }
             }
 
-            err_t _recv(tcp_pcb *pcb, pbuf *pb, err_t err) {
+            err_t _recv(const tcp_pcb *pcb, pbuf *pb, const err_t err) {
                 (void)pcb;
                 (void)err;
                 // The remote peer sends a TCP segment with the FIN flag set to
                 // close.
                 if (pb == nullptr) {
-                    DEBUGWIRE(":rcl pb=%p sz=%d\n", _rx_buf,
-                              _rx_buf ? _rx_buf->tot_len : -1);
+                    DEBUGWIRE("[:i%d] :rcl pb=%p sz=%d\n", getClientId(),
+                              _rx_buf, _rx_buf ? _rx_buf->tot_len : -1);
                     // flush any remaining data first
                     if (_rx_buf && _rx_buf->tot_len) {
                         auto size = std::make_unique<int>(getSize());
@@ -853,10 +858,11 @@ namespace async_tcp {
                 }
 
                 if (_rx_buf) {
-                    DEBUGWIRE(":rch %d, %d\n", _rx_buf->tot_len, pb->tot_len);
+                    DEBUGWIRE("[:i%d] :rch %d, %d\n", getClientId(),
+                              _rx_buf->tot_len, pb->tot_len);
                     pbuf_cat(_rx_buf, pb);
                 } else {
-                    DEBUGWIRE(":rn %d\n", pb->tot_len);
+                    DEBUGWIRE("[:i%d] :rn %d\n", getClientId(), pb->tot_len);
                     _rx_buf = pb;
                     _rx_buf_offset = 0;
                 }
@@ -868,15 +874,18 @@ namespace async_tcp {
             }
 
             void _error(const err_t err) {
-                DEBUGWIRE(":er %d 0x%%\n", static_cast<int>(err));
+                DEBUGWIRE("[:i%d] :er %d 0x%%\n", getClientId(),
+                          static_cast<int>(err));
                 if (!_pcb) {
                     // PCB already cleaned up
                     return;
                 }
+
                 if (err == ERR_OK) {
                     // No error, just return
                     return;
                 }
+
                 tcp_arg(_pcb, nullptr);
                 tcp_sent(_pcb, nullptr);
                 tcp_recv(_pcb, nullptr);
@@ -893,10 +902,11 @@ namespace async_tcp {
                 return ERR_OK;
             }
 
-            err_t _poll(tcp_pcb *pcb) {
+            err_t _poll(const tcp_pcb *pcb) const {
                 (void)pcb;
 
-                // Call the registered poll callback (for TcpWriter timeout checks)
+                // Call the registered poll callback (for TcpWriter timeout
+                // checks)
                 if (_pollCb) {
                     _pollCb();
                 }
@@ -904,51 +914,48 @@ namespace async_tcp {
             }
 
             // We may receive a nullptr as arg in the case when an IRQ happens
-            // during a shutdown sequence In that case, just ignore the CB
-            static err_t _s_recv(void *arg, struct tcp_pcb *tpcb,
-                                 struct pbuf *pb, err_t err) {
+            // during a shutdown sequence In that case, just ignore the CB.
+            static err_t _s_recv(void *arg, const tcp_pcb *tpcb, pbuf *pb,
+                                 const err_t err) {
                 if (arg) {
-                    auto *context =
-                        reinterpret_cast<TcpClientContext *>(arg);
+                    auto *context = static_cast<TcpClientContext *>(arg);
                     return context->_recv(tpcb, pb, err);
-                } else {
+                }
+
                 return ERR_OK;
+            }
+
+            static void _s_error(void *arg, const err_t err) {
+                if (arg) {
+                    static_cast<TcpClientContext *>(arg)->_error(err);
                 }
             }
 
-            static void _s_error(void *arg, err_t err) {
+            static err_t _s_poll(void *arg, // NOLINT
+                                 const tcp_pcb *tpcb) {
                 if (arg) {
-                    reinterpret_cast<TcpClientContext *>(arg)->_error(err);
+                    return static_cast<TcpClientContext *>(arg)->_poll(tpcb);
                 }
+                return ERR_OK;
             }
 
-            static err_t _s_poll(void *arg, struct tcp_pcb *tpcb) {
+            static err_t _s_acked(void *arg, tcp_pcb *tpcb, // NOLINT
+                                  const uint16_t len) {
                 if (arg) {
-                    return reinterpret_cast<TcpClientContext *>(arg)
-                        ->_poll(tpcb);
-                } else {
-                return ERR_OK;
+                    return static_cast<TcpClientContext *>(arg)->_acked(tpcb,
+                                                                        len);
                 }
+
+                return ERR_OK;
             }
 
-            static err_t _s_acked(void *arg, struct tcp_pcb *tpcb,
-                                  uint16_t len) {
+            static err_t _s_connected(void *arg, const struct tcp_pcb *pcb,
+                                      const err_t err) {
                 if (arg) {
-                    return reinterpret_cast<TcpClientContext *>(arg)
-                        ->_acked(tpcb, len);
-                } else {
-                return ERR_OK;
+                    return static_cast<TcpClientContext *>(arg)->_connected(
+                        pcb, err);
                 }
-            }
-
-            static err_t _s_connected(void *arg, struct tcp_pcb *pcb,
-                                      err_t err) {
-                if (arg) {
-                    return reinterpret_cast<TcpClientContext *>(arg)
-                        ->_connected(pcb, err);
-                } else {
                 return ERR_OK;
-                }
             }
 
         private:
@@ -973,5 +980,13 @@ namespace async_tcp {
             std::function<void()> _closeCb;
             std::function<void(size_t bytes_written)> _writtenCb;
             std::function<void()> _pollCb;
+
+            // --- Client ID for logging and traceability ---
+            uint8_t m_client_id = 0; // Smallest integer type for client ID
+            /**
+             * @brief Get the client ID (for internal logging)
+             * @return uint8_t client id
+             */
+            [[nodiscard]] uint8_t getClientId() const { return m_client_id; }
     };
 } // namespace async_tcp

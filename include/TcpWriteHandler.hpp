@@ -16,9 +16,8 @@
 
 #pragma once
 #include "ContextManager.hpp"
-#include "EventBridge.hpp"
+#include "EphemeralBridge.hpp"
 #include "TcpClient.hpp"
-#include <functional>
 #include <memory>
 
 namespace async_tcp {
@@ -32,11 +31,11 @@ namespace async_tcp {
      * self-destructs after execution. The async_context provides the necessary
      * serialization guarantees.
      */
-    class TcpWriteHandler final : public EventBridge {
+    class TcpWriteHandler final : public EphemeralBridge {
         private:
             TcpClient& m_io;                      ///< TCP client for write operations
             const uint8_t* m_data;                ///< Pointer to binary data chunk to write
-            size_t m_size;                   ///< Remaining bytes to writ
+            size_t m_size;                   ///< Remaining bytes to write
 
         protected:
             /**
@@ -80,8 +79,10 @@ namespace async_tcp {
                 assert(get_core_num() == ctx.getCore());
                 auto handler = std::make_unique<TcpWriteHandler>(ctx, data, size, io);
                 TcpWriteHandler* raw_ptr = handler.get();
-                raw_ptr->initialiseEphemeralBridge();
                 raw_ptr->takeOwnership(std::move(handler));
+                handler.reset();
+                raw_ptr->initialiseBridge();
+                // ReSharper disable once CppDFAInvalidatedMemory
                 raw_ptr->run(0);
             }
     };

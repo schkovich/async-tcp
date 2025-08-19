@@ -1,258 +1,35 @@
-/**
- * @file EventBridge.hpp
- * @brief Defines the EventBridge class for bridging between C-style async
- * context and C++ event handling.
- *
- * This file contains the EventBridge class which serves as a foundation for
- * implementing event handlers with proper core affinity in the AsyncTcpClient
- * library. It provides a clean interface between the C-style async_context API
- * from the Pico SDK and object-oriented C++ event handling.
- *
- * The EventBridge supports explicit initialization of worker types:
- *
- * 1. Persistent "when pending" workers - Registered via
- * initialisePerpetualBridge(). These remain registered with the context manager
- * until explicitly removed. Their lifecycle is managed externally and
- * registration is no longer automatic in the constructor.
- *
- * 2. Ephemeral "at time" workers - Registered via initialiseEphemeralBridge().
- *    These execute once at a specific time and are automatically removed from
- * the context manager after execution. They can optionally manage their own
- * lifecycle through self-ownership.
- *
- * The EventBridge follows the Template Method pattern, managing the
- * registration and lifecycle of workers with the async context while providing
- * a virtual method (onWork) for derived classes to implement specific event
- * handling logic.
- *
- * Key features:
- * - Thread-safe execution with core affinity guarantees
- * - Explicit worker registration and cleanup
- * - Support for self-managed lifecycle for ephemeral workers
- * - Clean separation between async mechanism and business logic
- *
- * @ingroup AsyncTCPClient
- */
 #pragma once
 
-#include <pico/async_context_threadsafe_background.h>
+#include <pico/async_context.h>
 
 #include "ContextManager.hpp"
-#include "EphemeralWorker.hpp"
-#include "PerpetualWorker.hpp"
 
 namespace async_tcp {
 
     extern "C" {
-    /**
-     * @brief Bridging function that connects the C-style callback to the
-     * C++ object.
-     *
-     * This function is called by the async context when a persistent worker
-     * is pending execution. It retrieves the EventBridge instance from the
-     * worker's user_data and calls its doWork method. The extern "C"
-     * linkage ensures correct calling convention for the C-based SDK.
-     *
-     * @param context The async context that is executing the worker
-     * @param worker The async_when_pending_worker_t that is being executed
-     */
     void perpetual_bridging_function(async_context_t *context,
                                      async_when_pending_worker_t *worker);
-    /**
-     * @brief Bridging function that connects the C-style callback to the
-     * C++ object for ephemeral workers.
-     *
-     * This function is called by the async context when an ephemeral
-     * worker's time arrives. It retrieves the EventBridge instance from the
-     * worker's user_data, calls its doWork method, and then releases
-     * ownership to trigger cleanup when the function returns.
-     *
-     * This function also handles queue monitoring for performance tracking,
-     * and toggles the LED_BUILTIN pin to provide visual feedback during
-     * worker execution.
-     *
-     * Note: By the time this function is called, the async context has
-     * already removed the worker from its internal list, so no explicit
-     * removal is needed.
-     *
-     * @param context The async context that is executing the worker
-     * @param worker The async_work_on_timeout that is being executed
-     */
+
     void ephemeral_bridging_function(async_context_t *context,
                                      async_work_on_timeout *worker);
     }
-    /**
-     * @class EventBridge
-     * @brief Bridges between the C-style async context API and C++
-     * object-oriented event handling.
-     *
-     * The `EventBridge` class provides a foundation for implementing event
-     * handlers with proper core affinity. It supports two types of workers:
-     *
-     * 1. Persistent "when pending" workers - Registered via
-     * initialisePerpetualBridge(). These remain registered with the context
-     * manager until explicitly removed. Their lifecycle is managed externally
-     * and registration is no longer automatic in the constructor.
-     *
-     * 2. Ephemeral "at time" workers - Registered via
-     * initialiseEphemeralBridge(). These execute once at a specific time and
-     * are automatically removed from the context manager before execution. They manage their own lifecycle through self-ownership.
-     *
-     * This class follows the Template Method pattern, where `doWork()` is the
-     * template method that defines the algorithm structure, and `onWork()` is
-     * the hook method that derived classes implement to provide specific
-     * behavior.
-     *
-     * Usage example for persistent worker:
-     * ```cpp
-     * class ConnectionHandler : public EventBridge {
-     * protected:
-     *     void onWork() override {
-     *         // Handle connection event
-     *     }
-     * public:
-     *     explicit ConnectionHandler(const ContextManagerPtr& ctx) :
-     * EventBridge(ctx) {}
-     * };
-     * ```
-     *
-     * Usage example for ephemeral worker:
-     * ```cpp
-     * class TimedTask : public EventBridge {
-     * protected:
-     *     void onWork() override {
-     *         // Execute timed task
-     *     }
-     * public:
-     *     explicit TimedTask(const ContextManagerPtr& ctx, EphemeralWorker
-     * worker) : EventBridge(ctx, worker) {}
-     * };
-     * ```
-     */
+
     class EventBridge {
-            // Friend function declaration with C linkage
-            friend void
-            perpetual_bridging_function(async_context_t *context,
-                                        async_when_pending_worker_t *worker);
-            friend void
-            ephemeral_bridging_function(async_context_t *context,
-                                        async_work_on_timeout *worker);
-            PerpetualWorker m_perpetual_worker =
-                {}; /**< Worker instance that interfaces with the async context
-                     */
-            EphemeralWorker m_ephemeral_worker; /**< Ephemeral worker instance
-                                                   for timed execution */
-            const AsyncCtx &m_ctx; /**< Reference to the context manager */
-            std::unique_ptr<EventBridge> m_self =
-                nullptr; /**< Self-reference for automatic cleanup */
 
-            /**
-             * @brief Executes the work by calling the virtual onWork method.
-             *
-             * This method is called by the bridging function when the worker is
-             * executed. It cannot be overridden by derived classes, ensuring
-             * consistent execution flow.
-             */
-            void doWork();
-
-            /**
-             * @brief Releases ownership of self, transferring lifecycle
-             * management.
-             *
-             * This method is typically called in the bridging function to
-             * transfer ownership to a local variable, which will destroy the
-             * EventBridge when it goes out of scope.
-             *
-             * @return A unique pointer to this EventBridge instance
-             */
-            std::unique_ptr<EventBridge> releaseOwnership();
+            const AsyncCtx &m_ctx; /**< Reference to the context manager. */
 
         protected:
-            /**
-             * @brief Takes ownership of self, enabling self-managed lifecycle.
-             *
-             * This method is typically used with ephemeral workers to allow
-             * them to manage their own lifecycle. When an ephemeral worker
-             * takes ownership of itself, it will be automatically destroyed
-             * after its execution completes.
-             *
-             * @param self A unique pointer to this EventBridge instance
-             */
-            void takeOwnership(std::unique_ptr<EventBridge> self);
+            explicit EventBridge(const AsyncCtx &ctx) : m_ctx(ctx) {}
 
-            /**
-             * @brief Pure virtual method that derived classes must implement to
-             * define their event handling logic.
-             *
-             * This method is called when the worker is executed. Derived
-             * classes should implement this method to perform their specific
-             * event handling task. It will be executed in the context of the
-             * worker's core, ensuring proper core affinity.
-             */
             virtual void onWork() = 0;
+            void doWork() { onWork(); };
 
+            [[nodiscard]] const AsyncCtx &getContext() const {
+                return m_ctx;
+            }
         public:
-            /**
-             * @brief Constructs an EventBridge instance for persistent "when
-             * pending" workers.
-             *
-             * Creates a Worker instance, sets up the bridging function, and
-             * registers the worker with the context manager. The worker remains
-             * registered until explicitly removed, typically by the destructor.
-             *
-             * @param ctx A reference to unique pointer to the context manager
-             * that will execute this worker
-             */
-            explicit EventBridge(const AsyncCtx &ctx);
-
-            /**
-             * @brief Destructor that handles cleanup based on worker type.
-             *
-             * For persistent "when pending" workers, deregisters the worker
-             * from the context manager. For ephemeral "at time" workers with
-             * self-ownership, no action is needed as they are automatically
-             * removed by the async context after execution.
-             */
             virtual ~EventBridge() = 0;
-
-            void initialisePerpetualBridge() {
-                m_perpetual_worker.setHandler(&perpetual_bridging_function);
-                // Store a direct pointer to this EventBridge instance
-                m_perpetual_worker.setPayload(this);
-                m_ctx.addWorker(m_perpetual_worker);
-            }
-
-            void initialiseEphemeralBridge() {
-                m_ephemeral_worker.setHandler(&ephemeral_bridging_function);
-                // Store a direct pointer to this EventBridge instance
-                m_ephemeral_worker.setPayload(this);
-            }
-
-            /**
-             * @brief Marks the persistent worker as having pending work to be
-             * executed.
-             *
-             * This method adds the worker to the async context's FIFO queue for
-             * execution. The worker will be executed when the async context
-             * processes its queue, maintaining proper core affinity.
-             */
-            void run();
-
-            /**
-             * @brief Schedules the ephemeral worker to run after the specified
-             * delay.
-             *
-             * This method schedules the worker to be placed in the async
-             * context's FIFO queue after the specified delay in microseconds.
-             * Note that this does not guarantee execution exactly at the
-             * specified time - the worker will be queued at that time and
-             * executed when the async context processes its queue, maintaining
-             * proper core affinity.
-             *
-             * @param run_in The delay in microseconds after which to queue the
-             * worker for execution
-             */
-            void run(uint32_t run_in);
+            virtual void initialiseBridge() = 0;
     };
 
 } // namespace async_tcp

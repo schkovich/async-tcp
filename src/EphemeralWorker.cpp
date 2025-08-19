@@ -4,11 +4,7 @@
 
 namespace async_tcp {
 
-    EphemeralWorker::EphemeralWorker() : m_worker{0} {
-        // @todo: sounds redundant
-        m_worker.do_work = nullptr;
-        m_worker.user_data = nullptr;
-    }
+    EphemeralWorker::EphemeralWorker() : m_worker{nullptr} {}
 
     void EphemeralWorker::setHandler(
         void (*handler_function)(async_context_t *, async_work_on_timeout *)) {

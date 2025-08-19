@@ -19,7 +19,7 @@ namespace async_tcp {
                                      const uint8_t* data,
                                      const size_t size,
                                      TcpClient& io)
-            : EventBridge(ctx), m_io(io), m_data(data), m_size(size) {
+            : EphemeralBridge(ctx), m_io(io), m_data(data), m_size(size) {
     }
 
     void TcpWriteHandler::onWork() {

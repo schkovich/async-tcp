@@ -36,12 +36,12 @@
 #include "WiFi.h"
 
 #include "Client.h"
-#include "EventBridge.hpp"
+#include "IoRxBuffer.hpp"
+#include "PerpetualBridge.hpp"
 #include "Print.h"
 #include "TcpWriter.hpp"
 #include "TcpClientSyncAccessor.hpp"
 #include <memory>
-
 
 namespace async_tcp {
 
@@ -378,9 +378,10 @@ namespace async_tcp {
 
             void setNoDelay(bool no_delay) const;
 
-            void setOnReceivedCallback(std::unique_ptr<EventBridge> worker);
-            void setOnConnectedCallback(std::unique_ptr<EventBridge> worker);
-            void setOnClosedCallback(std::unique_ptr<EventBridge> worker);
+            void setOnReceivedCallback(PerpetualBridgePtr bridge);
+            void setOnConnectedCallback(PerpetualBridgePtr bridge);
+            void setOnClosedCallback(PerpetualBridgePtr bridge);
+            void setOnWriterErrorCallback(PerpetualBridgePtr bridge);
 
             /**
              * @brief Set the TcpWriter for chunked write operations
@@ -405,11 +406,28 @@ namespace async_tcp {
              */
             void setSyncAccessor(TcpClientSyncAccessorPtr accessor);
 
-        protected:
-            std::unique_ptr<EventBridge> _received_callback_worker;
-            std::unique_ptr<EventBridge> _connected_callback_worker;
-            std::unique_ptr<EventBridge> _closed_callback_worker;
+            [[nodiscard]] IoRxBuffer *getRxBuffer() const {
+                return _rx;
+            }
 
+            // Method needed for the "jump" pattern in static callbacks
+            [[nodiscard]] TcpClientContext *getContext() const {
+                return _ctx;
+            }
+
+            [[nodiscard]] TcpWriter *getWriter() const {
+                return m_writer.get();
+            }
+
+            [[nodiscard]] TcpClientSyncAccessor *getSyncAccessor() const {
+                return m_sync_accessor.get();
+            }
+
+        protected:
+            PerpetualBridgePtr _received_callback_bridge;
+            PerpetualBridgePtr _connected_callback_bridge;
+            PerpetualBridgePtr _closed_callback_bridge;
+            PerpetualBridgePtr _writer_error_callback_bridge;
 
             TcpClientContext *_ctx;
 
@@ -429,11 +447,14 @@ namespace async_tcp {
 
             void _onErrorCallback(err_t err) const;
 
-            void _onReceiveCallback(std::unique_ptr<int> size) const;
+            void _onReceiveCallback() const;
 
             void _onAckCallback(const tcp_pcb *tpcb, uint16_t len) const;
+
             void checkAndHandleWriteTimeout() const;
         private:
+            IoRxBuffer *_rx;
+
             virtual uint8_t _ts_status();
             /**
              * @brief Get the client ID (for internal logging)

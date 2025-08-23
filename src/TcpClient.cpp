@@ -23,7 +23,6 @@
 #include <TcpClientContext.hpp>
 #include <utility> // @todo: clarify if needed
 
-#include "EventBridge.hpp"
 #include "LwipEthernet.h"
 #include "lwip/tcp.h"
 
@@ -47,13 +46,13 @@ namespace async_tcp {
         return defaultNoDelay;
     }
 
-    TcpClient::TcpClient() : _ctx(nullptr), _owned(nullptr) {
+    TcpClient::TcpClient() : _ctx(nullptr), _owned(nullptr), _rx(nullptr) {
         _timeout = 5000;
         _add(this);
     }
 
     TcpClient::TcpClient(TcpClientContext *ctx)
-        : _ctx(ctx), _owned(nullptr) {
+        : _ctx(ctx), _owned(nullptr), _rx(nullptr) {
         _timeout = 5000;
         _ctx->ref();
 
@@ -67,6 +66,9 @@ namespace async_tcp {
         if (_ctx) {
             _ctx->unref();
         }
+        // Clean up IoRxBuffer
+        delete _rx;
+        _rx = nullptr;
     }
 
     [[maybe_unused]] unique_ptr<TcpClient> TcpClient::clone() const {
@@ -81,6 +83,9 @@ namespace async_tcp {
         if (_ctx) {
             _ctx->ref();
         }
+        // Initialize _rx as nullptr - each client needs its own IoRxBuffer
+        // IoRxBuffer cannot be shared between clients as it manages connection-specific state
+        _rx = nullptr;
         _add(this);
     }
 
@@ -89,6 +94,10 @@ namespace async_tcp {
         if (this == &other) {
             return *this;
         }
+
+        // Clean up existing _rx before assignment
+        delete _rx;
+        _rx = nullptr;
 
         // Decrement the reference count of the current context if it exists
         if (_ctx) {
@@ -105,6 +114,10 @@ namespace async_tcp {
         _timeout = other._timeout;
         _localPort = localPort();
         _owned = other._owned;
+
+        // Initialize _rx as nullptr - each client needs its own IoRxBuffer
+        // IoRxBuffer cannot be shared between clients as it manages connection-specific state
+        _rx = nullptr;
 
         return *this;
     }
@@ -128,6 +141,10 @@ namespace async_tcp {
             _ctx = nullptr;
         }
 
+        // Clean up existing _rx if present
+        delete _rx;
+        _rx = nullptr;
+
         tcp_pcb *pcb = tcp_new();
         if (!pcb) {
             DEBUGWIRE("[TcpClient][%d] No PCB\n", getClientId());
@@ -138,30 +155,41 @@ namespace async_tcp {
             pcb->local_port = _localPort++;
         }
 
+
+        // CRITICAL FIX: Set PCB arg to point to TcpClient, not TcpClientContext
+        // This is required for lwip_receive_callback to work correctly
+        tcp_arg(pcb, this);
+
         _ctx = new TcpClientContext(pcb, nullptr, nullptr);
         _ctx->ref();
         _ctx->setClientId(getClientId());
         _ctx->setTimeout(_timeout);
+
         _ctx->setOnConnectCallback([this] { _onConnectCallback(); });
-        _ctx->setOnCloseCallback([this] { _onCloseCallback(); });
+        // _ctx->setOnCloseCallback([this] { _onCloseCallback(); });
         _ctx->setOnErrorCallback([this](auto &&PH1) {
             _onErrorCallback(std::forward<decltype(PH1)>(PH1));
         });
-        _ctx->setOnReceiveCallback([this](auto &&PH1) {
-            _onReceiveCallback(std::forward<decltype(PH1)>(PH1));
-        });
+        // _ctx->setOnReceiveCallback(
+        //     [this](auto &&PH1) { _onReceiveCallback(); });
         _ctx->setOnAckCallback([this](auto &&PH1, auto &&PH2) {
             _onAckCallback(std::forward<decltype(PH1)>(PH1),
                            std::forward<decltype(PH2)>(PH2));
         });
-        _ctx->setOnPollCallback([this] {
-            checkAndHandleWriteTimeout();
-        });
+        _ctx->setOnPollCallback([this] { checkAndHandleWriteTimeout(); });
+
+        _rx = new IoRxBuffer(nullptr);
+        _rx->setOnReceivedCallback([this] { _onReceiveCallback(); });
+        _rx->setOnClosedCallback([this] { _onCloseCallback(); });
 
         if (const auto res = _ctx->connect(ip, port); res != ERR_OK) {
-            DEBUGWIRE("[TcpClient][%d] Client did not menage to connect.\n", getClientId());
+            DEBUGWIRE("[TcpClient][%d] Client did not menage to connect.\n",
+                      getClientId());
             _ctx->unref();
             _ctx = nullptr;
+            // Clean up _rx on connection failure
+            delete _rx;
+            _rx = nullptr;
             return 0;
         }
 
@@ -201,12 +229,14 @@ namespace async_tcp {
             return PICO_ERROR_RESOURCE_IN_USE;
         }
 
-        // Delegate directly to TcpWriter - this is the only path in async architecture
+        // Delegate directly to TcpWriter - this is the only path in async
+        // architecture
         m_writer->write(buf, size);
 
         // @deprecated: size_t return is legacy from sync API
         // In async operations, write completion should be handled via callbacks
-        // Always return requested size - actual success/failure handled asynchronously
+        // Always return requested size - actual success/failure handled
+        // asynchronously
         return PICO_OK;
     }
 
@@ -218,7 +248,7 @@ namespace async_tcp {
         return _ctx->write(stream);
     }
 
-    void TcpClient::writeChunk(const uint8_t* data, const size_t size) const {
+    void TcpClient::writeChunk(const uint8_t *data, const size_t size) const {
         if (!_ctx || !data || size == 0) {
             return;
         }
@@ -403,18 +433,18 @@ namespace async_tcp {
     [[maybe_unused]] uint8_t TcpClient::getKeepAliveCount() const {
         return _ctx->getKeepAliveCount();
     }
-    void TcpClient::setOnReceivedCallback(std::unique_ptr<EventBridge> worker) {
-        _received_callback_worker = std::move(worker);
+    void TcpClient::setOnReceivedCallback(std::unique_ptr<PerpetualBridge> bridge) {
+        _received_callback_bridge = std::move(bridge);
     }
 
     void
     TcpClient::setOnConnectedCallback(
-        std::unique_ptr<EventBridge> worker) {
-        _connected_callback_worker = std::move(worker);
+        std::unique_ptr<PerpetualBridge> bridge) {
+        _connected_callback_bridge = std::move(bridge);
     }
 
-    void TcpClient::setOnClosedCallback(std::unique_ptr<EventBridge> worker) {
-        _closed_callback_worker = std::move(worker);
+    void TcpClient::setOnClosedCallback(std::unique_ptr<PerpetualBridge> bridge) {
+        _closed_callback_bridge = std::move(bridge);
     }
 
     void TcpClient::_onConnectCallback() const {
@@ -422,8 +452,8 @@ namespace async_tcp {
         (void)remote_ip;
         DEBUGWIRE("[TcpClient][%d] TcpClient::_onConnectCallback(): Connected to %s.\n", getClientId(),
                   remote_ip.toString().c_str());
-        if (_connected_callback_worker) {
-            _connected_callback_worker->run();
+        if (_connected_callback_bridge) {
+            _connected_callback_bridge->run();
         } else {
             DEBUGWIRE("[TcpClient][%d] TcpClient::_onConnectCallback: No event handler\n", getClientId());
         }
@@ -434,8 +464,8 @@ namespace async_tcp {
         if (m_writer) {
             m_writer->onError(ERR_CLSD); // Always notify writer on close
         }
-        if (_closed_callback_worker) {
-            _closed_callback_worker->run();
+        if (_closed_callback_bridge) {
+            _closed_callback_bridge->run();
         } else {
             DEBUGWIRE("[TcpClient][%d] TcpClient::_onCloseCallback: No event handler\n", getClientId());
         }
@@ -448,9 +478,10 @@ namespace async_tcp {
         }
     }
 
-    void TcpClient::_onReceiveCallback(std::unique_ptr<int> size) const {
-        if (_received_callback_worker) {
-            _received_callback_worker->run();
+    void TcpClient::_onReceiveCallback() const {
+        if (_received_callback_bridge) {
+            _received_callback_bridge->workload(_rx);
+            _received_callback_bridge->run();
         } else {
             DEBUGWIRE("[TcpClient][%d] TcpClient::_onReceiveCallback: No event handler\n", getClientId());
         }

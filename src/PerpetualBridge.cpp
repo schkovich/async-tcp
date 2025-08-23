@@ -1,5 +1,4 @@
 #include "PerpetualBridge.hpp"
-#include <Arduino.h>
 
 namespace async_tcp {
 
@@ -21,4 +20,6 @@ namespace async_tcp {
     void PerpetualBridge::run() {
         getContext().setWorkPending(m_perpetual_worker);
     }
+
+    void PerpetualBridge::workload(void *data) {/* noop */}
 } // namespace async_tcp

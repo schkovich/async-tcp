@@ -21,8 +21,12 @@
 
 #pragma once
 
+#include "IoRxBuffer.hpp"
+#include "TcpClient.hpp"
+
 #include <Arduino.h>
 #include <cassert>
+#include <functional>
 #include <lwip/ip.h>
 #include <lwip/opt.h>
 #include <lwip/tcp.h>
@@ -36,6 +40,8 @@ namespace async_tcp {
 
     typedef void (*discard_cb_t)(void *, TcpClientContext *);
 
+    using receive_cb_t = std::function<void(std::unique_ptr<int>)>;
+
     class TcpClientContext {
         public:
             TcpClientContext(tcp_pcb *pcb, const discard_cb_t discard_cb,
@@ -44,8 +50,9 @@ namespace async_tcp {
                   _discard_cb(discard_cb), _discard_cb_arg(discard_cb_arg),
                   _ref_cnt(0), _next(nullptr) {
                 tcp_setprio(_pcb, TCP_PRIO_MIN);
-                tcp_arg(_pcb, this);
-                tcp_recv(_pcb, reinterpret_cast<tcp_recv_fn>(&_s_recv));
+                // NOTE: Do NOT set tcp_arg here - it will be set by TcpClient::connect()
+                // All callbacks will get the same arg (TcpClient*) as set by tcp_arg()
+                tcp_recv(_pcb, lwip_receive_callback);
                 tcp_sent(_pcb, &_s_acked);
                 tcp_err(_pcb, &_s_error);
                 tcp_poll(_pcb, reinterpret_cast<tcp_poll_fn>(&_s_poll), 1);
@@ -587,8 +594,12 @@ namespace async_tcp {
                 _errorCb = cb;
             }
 
+            /**
+             * @deprecated
+             * @param cb
+             */
             void setOnReceiveCallback(
-                const std::function<void(std::unique_ptr<int>)> &cb) {
+                const receive_cb_t &cb) {
                 _receiveCb = cb;
             }
 
@@ -597,6 +608,10 @@ namespace async_tcp {
                 _ackCb = cb;
             }
 
+            /**
+             * @deprecated
+             * @param cb
+             */
             void setOnCloseCallback(const std::function<void()> &cb) {
                 _closeCb = cb;
             }
@@ -876,22 +891,7 @@ namespace async_tcp {
             void _error(const err_t err) {
                 DEBUGWIRE("[:i%d] :er %d 0x%%\n", getClientId(),
                           static_cast<int>(err));
-                if (!_pcb) {
-                    // PCB already cleaned up
-                    return;
-                }
-
-                if (err == ERR_OK) {
-                    // No error, just return
-                    return;
-                }
-
-                tcp_arg(_pcb, nullptr);
-                tcp_sent(_pcb, nullptr);
-                tcp_recv(_pcb, nullptr);
-                tcp_err(_pcb, nullptr);
                 _pcb = nullptr;
-
                 _errorCb(err);
             }
 
@@ -927,14 +927,16 @@ namespace async_tcp {
 
             static void _s_error(void *arg, const err_t err) {
                 if (arg) {
-                    static_cast<TcpClientContext *>(arg)->_error(err);
+                    const auto jump = static_cast<TcpClient *>(arg);
+                        jump->getContext()->_error(err);
                 }
             }
 
             static err_t _s_poll(void *arg, // NOLINT
                                  const tcp_pcb *tpcb) {
                 if (arg) {
-                    return static_cast<TcpClientContext *>(arg)->_poll(tpcb);
+                    const auto jump = static_cast<TcpClient *>(arg);
+                    return jump->getContext()->_poll(tpcb);
                 }
                 return ERR_OK;
             }
@@ -942,7 +944,8 @@ namespace async_tcp {
             static err_t _s_acked(void *arg, tcp_pcb *tpcb, // NOLINT
                                   const uint16_t len) {
                 if (arg) {
-                    return static_cast<TcpClientContext *>(arg)->_acked(tpcb,
+                    const auto jump = static_cast<TcpClient *>(arg);
+                    return jump->getContext()->_acked(tpcb,
                                                                         len);
                 }
 
@@ -952,8 +955,8 @@ namespace async_tcp {
             static err_t _s_connected(void *arg, const struct tcp_pcb *pcb,
                                       const err_t err) {
                 if (arg) {
-                    return static_cast<TcpClientContext *>(arg)->_connected(
-                        pcb, err);
+                    const auto jump = static_cast<TcpClient *>(arg);
+                    return jump->getContext()->_connected(pcb, err);
                 }
                 return ERR_OK;
             }
@@ -975,7 +978,7 @@ namespace async_tcp {
             TcpClientContext *_next;
             std::function<void()> _connectCb;
             std::function<void(err_t err)> _errorCb;
-            std::function<void(std::unique_ptr<int>)> _receiveCb;
+            receive_cb_t _receiveCb;
             std::function<void(struct tcp_pcb *tpcb, uint16_t len)> _ackCb;
             std::function<void()> _closeCb;
             std::function<void(size_t bytes_written)> _writtenCb;

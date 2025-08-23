@@ -1,6 +1,7 @@
 #pragma once
 #include "EventBridge.hpp"
-#include "PerpetualWorker.hpp"
+
+#include <memory>
 
 namespace async_tcp {
 
@@ -14,15 +15,19 @@ namespace async_tcp {
 
             ~PerpetualBridge() override {
                 getContext().removeWorker(m_perpetual_worker);
-                m_perpetual_worker = {}; ///< Reset the perpetual worker
             }
 
             void initialiseBridge() override;
 
             void run();
 
+            // RxBuffer
+            virtual void workload(void *data);
+
         protected:
             PerpetualWorker m_perpetual_worker = {};
     };
+
+    using PerpetualBridgePtr = std::unique_ptr<PerpetualBridge>;
 
 } // namespace async_tcp

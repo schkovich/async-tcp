@@ -24,10 +24,10 @@
 
 #pragma once
 
+#include <pico/async_context_threadsafe_background.h>
+
 #include "EphemeralWorker.hpp"
 #include "PerpetualWorker.hpp"
-#include <memory>
-#include <pico/async_context_threadsafe_background.h>
 
 namespace async_tcp {
 

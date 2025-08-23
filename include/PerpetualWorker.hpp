@@ -4,8 +4,11 @@
 
 #pragma once
 #include "WorkerBase.hpp"
+#include <pico/async_context.h>
 
 namespace async_tcp {
+
+    using handler_function_t = void (*)(async_context_t *, async_when_pending_worker_t *);
 
     class PerpetualWorker final : public WorkerBase {
             async_when_pending_worker_t
@@ -38,8 +41,7 @@ namespace async_tcp {
              * parameters.
              */
             void
-            setHandler(void (*handler_func)(async_context_t *,
-                                            async_when_pending_worker_t *));
+            setHandler(handler_function_t handler_function);
 
             void setPayload(void *data) override;
     };

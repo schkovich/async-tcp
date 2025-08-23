@@ -4,8 +4,6 @@
 
 #pragma once
 
-#include <pico/async_context_threadsafe_background.h>
-
 namespace async_tcp {
 
     class WorkerBase {

@@ -12,9 +12,8 @@ namespace async_tcp {
         return &m_worker;
     }
 
-    void PerpetualWorker::setHandler(void (*handler_func)(
-        async_context_t *, async_when_pending_worker_t *)) {
-        m_worker.do_work = handler_func;
+    void PerpetualWorker::setHandler(const handler_function_t handler_function) {
+        m_worker.do_work = handler_function;
     }
 
     void PerpetualWorker::setPayload(void *data) { m_worker.user_data = data; }

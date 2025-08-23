@@ -1,8 +1,8 @@
 #pragma once
-#include "EphemeralWorker.hpp"
 #include "EventBridge.hpp"
 
 #include <Arduino.h>
+#include <memory>
 
 namespace async_tcp {
 

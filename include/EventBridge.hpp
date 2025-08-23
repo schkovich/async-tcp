@@ -1,7 +1,5 @@
 #pragma once
 
-#include <pico/async_context.h>
-
 #include "ContextManager.hpp"
 
 namespace async_tcp {
@@ -28,7 +26,7 @@ namespace async_tcp {
                 return m_ctx;
             }
         public:
-            virtual ~EventBridge() = 0;
+            virtual ~EventBridge() = default;
             virtual void initialiseBridge() = 0;
     };
 

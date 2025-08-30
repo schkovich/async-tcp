@@ -77,14 +77,6 @@ namespace async_tcp {
      */
     class TcpClient {
 
-        protected:
-            /**
-             * @brief A protected constructor to initialize the AsyncTcpClient
-             * with a specific context.
-             * @param ctx Pointer to an AsyncTcpClientContext object.
-             */
-            explicit TcpClient(TcpClientContext *ctx);
-
         public:
             /**
              * @brief Default constructor for the AsyncTcpClient class.
@@ -276,10 +268,11 @@ namespace async_tcp {
 
             void setNoDelay(bool no_delay) const;
 
-            void setOnReceivedCallback(std::unique_ptr<PerpetualBridge> bridge);
+            void setOnReceivedCallback(PerpetualBridgePtr bridge);
             void setOnConnectedCallback(PerpetualBridgePtr bridge);
-            void setOnFinCallback(std::unique_ptr<PerpetualBridge> bridge);
+            void setOnFinCallback(PerpetualBridgePtr bridge);
             void setOnWriterErrorCallback(PerpetualBridgePtr bridge);
+            void setOnPollCallback(PerpetualBridgePtr bridge);
 
             /**
              * @brief Set the TcpWriter for chunked write operations
@@ -328,6 +321,7 @@ namespace async_tcp {
             PerpetualBridgePtr _connected_callback_bridge;
             PerpetualBridgePtr _fin_callback_bridge;
             PerpetualBridgePtr _writer_error_callback_bridge;
+            PerpetualBridgePtr _poll_callback_bridge;
 
             TcpClientContext *_ctx;
 
@@ -349,7 +343,7 @@ namespace async_tcp {
 
             void _onAckCallback(const tcp_pcb *tpcb, uint16_t len) const;
 
-            void checkAndHandleWriteTimeout() const;
+            void _onPollCallback() const;
         private:
             unsigned long _timeout;      // number of milliseconds to wait for the next char before aborting timed read
 

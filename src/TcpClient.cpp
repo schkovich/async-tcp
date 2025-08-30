@@ -47,12 +47,6 @@ namespace async_tcp {
         _timeout = 5000;
     }
 
-    TcpClient::TcpClient(TcpClientContext *ctx)
-        : _ctx(ctx) {
-        _timeout = 5000;
-        setNoDelay(defaultNoDelay);
-    }
-
     TcpClient::~TcpClient() {
         delete _ctx;
         _ctx = nullptr;
@@ -111,7 +105,7 @@ namespace async_tcp {
         });
         _ctx->setOnFinCallback([this] { _onFinCallback(); });
         _ctx->setOnReceivedCallback([this] { _onReceiveCallback(); });
-        _ctx->setOnPollCallback([this] { checkAndHandleWriteTimeout(); });
+        _ctx->setOnPollCallback([this] { _onPollCallback(); });
 
         if (const auto res = _ctx->connect(ip, port); res != ERR_OK) {
             DEBUGWIRE("[TcpClient][%d] Client did not menage to connect.\n",
@@ -312,17 +306,17 @@ namespace async_tcp {
         return _ctx->getKeepAliveCount();
     }
 
-    void TcpClient::setOnReceivedCallback(std::unique_ptr<PerpetualBridge> bridge) {
+    void TcpClient::setOnReceivedCallback(PerpetualBridgePtr bridge) {
         _received_callback_bridge = std::move(bridge);
     }
 
     void
     TcpClient::setOnConnectedCallback(
-        std::unique_ptr<PerpetualBridge> bridge) {
+        PerpetualBridgePtr bridge) {
         _connected_callback_bridge = std::move(bridge);
     }
 
-    void TcpClient::setOnFinCallback(std::unique_ptr<PerpetualBridge> bridge) {
+    void TcpClient::setOnFinCallback(PerpetualBridgePtr bridge) {
         _fin_callback_bridge = std::move(bridge);
     }
 
@@ -383,14 +377,17 @@ namespace async_tcp {
         m_writer = std::move(writer);
     }
 
+    void TcpClient::setOnPollCallback(PerpetualBridgePtr bridge) {
+        _poll_callback_bridge = std::move(bridge);
+    }
+
     void TcpClient::setSyncAccessor(TcpClientSyncAccessorPtr accessor) {
         m_sync_accessor = std::move(accessor);
     }
 
-    void TcpClient::checkAndHandleWriteTimeout() const {
-
-        if (m_writer && m_writer->hasTimedOut()) {
-            m_writer->onWriteTimeout();
-        }
+    void TcpClient::_onPollCallback() const {
+        if (_poll_callback_bridge) {
+            _poll_callback_bridge->run();
+        } // else: no-op when no handler is registered
     }
 } // namespace AsyncTcp

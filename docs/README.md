@@ -24,36 +24,42 @@ Key Components and Functionality
           logical delimiter.
         * **Echo Server** - Sends the received quote to the server and displays the echoed response.
     * Manages connection attempts, data reads, and writes asynchronously, without blocking the main execution thread.
-    * Implements proper callback handling for connection, data receipt, and connection closure events.
+    * Implements proper callback handling for connection, data receipt, and connection FIN events.
+    * Uses direct execution paths for same-core operations to improve performance while maintaining thread safety.
 
 3. **Thread-Safe Buffer Management**
 
     * Uses the `QuoteBuffer` class which extends `SyncBridge` to provide thread-safe access to string data.
-    * Implements SET, GET, and APPEND operations for flexible buffer manipulation.
+    * Implements SET, GET, APPEND, and new SET_COMPLETE, IS_COMPLETE, RESET_COMPLETE operations for comprehensive buffer management.
+    * Features quote completion tracking to identify when a complete quote has been received.
+    * Supports partial buffer consumption for efficient data processing.
     * Ensures all modifications happen on the core where the ContextManager was initialized.
 
 4. **Event Bridge Pattern for Asynchronous Operations**
 
     * Implements the `EventBridge` pattern with specialized handlers for each type of event:
         * `QotdConnectedHandler`: Handles successful connections to the QOTD server
-        * `QotdReceivedHandler`: Processes data received from the QOTD server
-        * `QotdClosedHandler`: Handles connection closure events, which signal the end of a complete quote
+        * `QotdReceivedHandler`: Processes data received from the QOTD server with partial consumption support
+        * `QotdFinHandler`: Handles TCP FIN events, which signal the end of a complete quote
         * `EchoConnectedHandler`: Manages connections to the echo server
-        * `EchoReceivedHandler`: Processes data echoed back from the server
-    * Each handler runs on the appropriate core with proper thread safety.
+        * `EchoReceivedHandler`: Processes data echoed back from the server with proper delimiter handling
+    * Each handler runs on the appropriate core with proper thread safety through context locking mechanisms.
 
 5. **QOTD Protocol Implementation**
 
-    * Implements the complete QOTD protocol which uses connection closure as the logical delimiter.
-    * Appends an "End of Quote" marker when a connection is closed to indicate a complete quote.
+    * Implements the complete QOTD protocol, using TCP FIN as the logical delimiter.
+    * Tracks quote completion state to know when a quote is fully received.
+    * Resets the quote buffer on new connections to accommodate a new quote.
+    * Properly drains remaining data when FIN packet is received.
     * Ensures quotes are processed sequentially by waiting for the buffer to be empty before getting a new quote.
-    * Removes the marker before displaying echoed quotes for clean output.
 
 6. **Asynchronous Context Management**
 
     * Utilizes the Raspberry Pi Pico SDK's `async_context` through the `ContextManager` class.
     * Creates separate context managers for each core to ensure proper task distribution.
     * Uses `EventBridge` derivatives to ensure operations occur on the correct core.
+    * Uses optimized execution paths with `isCrossCore()`, `ctxLock()`, and `ctxUnlock()` methods.
+    * Prevents misuse in interrupt contexts through appropriate assertions.
 
 Concepts Demonstrated
 ---------------------
@@ -62,20 +68,20 @@ Concepts Demonstrated
   the main program to handle other tasks while waiting for network responses.
 
 * **Thread-Safe Printing Operations**: All print operations are routed through the `PrintHandler` class to core 1,
-  ensuring thread-safe serial output. This is critical since Arduino print operations are not inherently thread-safe,
-  and the async_context guarantees logical single-threaded execution within a core.
+  ensuring thread-safe serial output.
 
 * **Protocol Implementation with Connection-Based Delimiter**: Demonstrates how to implement a protocol (QOTD) that uses
-  connection closure as the logical end-of-data marker.
+  TCP FIN as the logical end-of-data marker.
 
 * **Thread Safety in Dual-Core Systems**: Shows how to ensure data consistency when operating across both cores of the
-  RP2040 using the SyncBridge pattern.
+  RP2040 using the SyncBridge pattern with optimized same-core execution paths.
 
 * **Core Affinity Management**: Illustrates how to ensure operations run on the appropriate core for handling specific
   hardware or timing-sensitive tasks.
 
-* **Callback-Based Event Processing**: Implements a callback system for connection events, data reception, and
-  connection closure.
+* **Partial Buffer Consumption**: Demonstrates efficient handling of incoming data through threshold-based partial consumption.
+
+* **Quote Completion Tracking**: Shows how to track the completion state of received data for better application-level protocol handling.
 
 Requirements
 ------------
@@ -99,10 +105,4 @@ capabilities, proper protocol handling, and thread-safe operation in a dual-core
 
 Purpose
 -------
-This example serves as a proof-of-concept demonstrating how to replace boost::asio functionality in an embedded context
-using:
-
-- TcpClient for network operations (replacing boost networking)
-- Pico SDK's async_context for event handling (replacing boost event loop)
-- EventBridge pattern for handling network events.
-- SyncBridge pattern for thread-safe resource access.
+This example is used for functional and stress testing of the async-tcp library.

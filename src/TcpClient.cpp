@@ -26,9 +26,6 @@
 #include "LwipEthernet.h"
 #include "lwip/tcp.h"
 
-template <>
-async_tcp::TcpClient *SList<async_tcp::TcpClient>::_s_first = nullptr;
-
 namespace async_tcp {
 
     using ::std::make_unique;
@@ -46,88 +43,28 @@ namespace async_tcp {
         return defaultNoDelay;
     }
 
-    TcpClient::TcpClient() : _ctx(nullptr), _owned(nullptr), _rx(nullptr) {
+    TcpClient::TcpClient() : _ctx(nullptr) {
         _timeout = 5000;
-        _add(this);
     }
 
     TcpClient::TcpClient(TcpClientContext *ctx)
-        : _ctx(ctx), _owned(nullptr), _rx(nullptr) {
+        : _ctx(ctx) {
         _timeout = 5000;
-        _ctx->ref();
-
-        _add(this);
-
         setNoDelay(defaultNoDelay);
     }
 
     TcpClient::~TcpClient() {
-        _remove(this);
-        if (_ctx) {
-            _ctx->unref();
-        }
-        // Clean up IoRxBuffer
-        delete _rx;
-        _rx = nullptr;
+        delete _ctx;
+        _ctx = nullptr;
     }
 
-    [[maybe_unused]] unique_ptr<TcpClient> TcpClient::clone() const {
-        return make_unique<TcpClient>(*this);
-    }
-
-    TcpClient::TcpClient(const TcpClient &other)  : Client(other), SList(other) {
-        _ctx = other._ctx;
-        _timeout = other._timeout;
-        _localPort = localPort();
-        _owned = other._owned;
-        if (_ctx) {
-            _ctx->ref();
-        }
-        // Initialize _rx as nullptr - each client needs its own IoRxBuffer
-        // IoRxBuffer cannot be shared between clients as it manages connection-specific state
-        _rx = nullptr;
-        _add(this);
-    }
-
-    TcpClient &TcpClient::operator=(const TcpClient &other) {
-        // Self-assignment check to avoid unnecessary work
-        if (this == &other) {
-            return *this;
-        }
-
-        // Clean up existing _rx before assignment
-        delete _rx;
-        _rx = nullptr;
-
-        // Decrement the reference count of the current context if it exists
-        if (_ctx) {
-            _ctx->unref();
-        }
-
-        // Copy the new context and increment the reference count
-        _ctx = other._ctx;
-        if (_ctx) {
-            _ctx->ref();
-        }
-
-        // Copy other members
-        _timeout = other._timeout;
-        _localPort = localPort();
-        _owned = other._owned;
-
-        // Initialize _rx as nullptr - each client needs its own IoRxBuffer
-        // IoRxBuffer cannot be shared between clients as it manages connection-specific state
-        _rx = nullptr;
-
-        return *this;
-    }
     int TcpClient::connect(const char *host, const uint16_t port) {
         if (AIPAddress remote_addr; hostByName(
                 host, remote_addr,
-                static_cast<int>(_ctx->getTimeout()))) { // from WiFiClient
+                static_cast<int>(_timeout))) {
             return connect(remote_addr, port);
         }
-        return 0;
+        return PICO_ERROR_TIMEOUT;
     }
 
     int TcpClient::connect(const AString &host, const uint16_t port) {
@@ -135,69 +72,65 @@ namespace async_tcp {
     }
 
     int TcpClient::connect(AIPAddress ip, const uint16_t port) {
-        if (_ctx) {
-            stop();
-            _ctx->unref();
-            _ctx = nullptr;
+        // Require a sync accessor and enforce same-core execution via run_local
+        if (!m_sync_accessor) {
+            return PICO_ERROR_INVALID_STATE;
         }
+        return static_cast<int>(m_sync_accessor->run_local([&]() {
+            return static_cast<uint32_t>(_ts_connect(ip, port));
+        }));
+    }
 
-        // Clean up existing _rx if present
-        delete _rx;
-        _rx = nullptr;
+    int TcpClient::_ts_connect(AIPAddress ip, const uint16_t port) {
+        if (_ctx) {
+            DEBUGWIRE("[INFO][:i%d] :ctx :%p\n", getClientId(), _ctx);
+            return PICO_ERROR_RESOURCE_IN_USE;
+        }
 
         tcp_pcb *pcb = tcp_new();
         if (!pcb) {
             DEBUGWIRE("[TcpClient][%d] No PCB\n", getClientId());
-            return 0;
+            return PICO_ERROR_IO;
         }
 
         if (_localPort > 0) {
             pcb->local_port = _localPort++;
         }
 
-
-        // CRITICAL FIX: Set PCB arg to point to TcpClient, not TcpClientContext
-        // This is required for lwip_receive_callback to work correctly
-        tcp_arg(pcb, this);
-
-        _ctx = new TcpClientContext(pcb, nullptr, nullptr);
-        _ctx->ref();
+        _ctx = new TcpClientContext(pcb);
         _ctx->setClientId(getClientId());
         _ctx->setTimeout(_timeout);
 
         _ctx->setOnConnectCallback([this] { _onConnectCallback(); });
-        // _ctx->setOnCloseCallback([this] { _onCloseCallback(); });
         _ctx->setOnErrorCallback([this](auto &&PH1) {
             _onErrorCallback(std::forward<decltype(PH1)>(PH1));
         });
-        // _ctx->setOnReceiveCallback(
-        //     [this](auto &&PH1) { _onReceiveCallback(); });
         _ctx->setOnAckCallback([this](auto &&PH1, auto &&PH2) {
             _onAckCallback(std::forward<decltype(PH1)>(PH1),
                            std::forward<decltype(PH2)>(PH2));
         });
+        _ctx->setOnFinCallback([this] { _onFinCallback(); });
+        _ctx->setOnReceivedCallback([this] { _onReceiveCallback(); });
         _ctx->setOnPollCallback([this] { checkAndHandleWriteTimeout(); });
-
-        _rx = new IoRxBuffer(nullptr);
-        _rx->setOnReceivedCallback([this] { _onReceiveCallback(); });
-        _rx->setOnClosedCallback([this] { _onCloseCallback(); });
 
         if (const auto res = _ctx->connect(ip, port); res != ERR_OK) {
             DEBUGWIRE("[TcpClient][%d] Client did not menage to connect.\n",
                       getClientId());
-            _ctx->unref();
+            delete _ctx;
             _ctx = nullptr;
-            // Clean up _rx on connection failure
-            delete _rx;
-            _rx = nullptr;
-            return 0;
+            return res;
         }
 
         setNoDelay(defaultNoDelay);
 
-        return 1;
+        return PICO_OK;
     }
 
+    /**
+     * Used in onConnected callback. Calling the function from the async context
+     * is thread safe.
+     * @return void
+     */
     void TcpClient::setNoDelay(const bool no_delay) const {
         if (!_ctx) {
             return;
@@ -205,20 +138,21 @@ namespace async_tcp {
         _ctx->setNoDelay(no_delay);
     }
 
+    /**
+     * @deprecated
+     * @return bool
+     */
     [[maybe_unused]] bool TcpClient::getNoDelay() const {
+        assert(true);
         if (!_ctx) {
             return false;
         }
         return _ctx->getNoDelay();
     }
 
-    int TcpClient::availableForWrite() {
-        return _ctx ? static_cast<int>(_ctx->availableForWrite()) : 0;
-    }
+    size_t TcpClient::write(const uint8_t b) const { return write(&b, 1); }
 
-    size_t TcpClient::write(const uint8_t b) { return write(&b, 1); }
-
-    size_t TcpClient::write(const uint8_t *buf, const size_t size) {
+    size_t TcpClient::write(const uint8_t *buf, const size_t size) const {
         assert(_ctx && "TcpClient context must be valid");
         assert(size > 0 && "Write size must be non-zero");
         assert(m_writer && "TcpWriter must be configured for async operations");
@@ -228,24 +162,8 @@ namespace async_tcp {
             DEBUGWIRE("[TcpClient][%d] RESOURCE_IN_USE\n", getClientId());
             return PICO_ERROR_RESOURCE_IN_USE;
         }
-
-        // Delegate directly to TcpWriter - this is the only path in async
-        // architecture
         m_writer->write(buf, size);
-
-        // @deprecated: size_t return is legacy from sync API
-        // In async operations, write completion should be handled via callbacks
-        // Always return requested size - actual success/failure handled
-        // asynchronously
         return PICO_OK;
-    }
-
-    size_t TcpClient::write(Stream &stream) const {
-        if (!_ctx || !stream.available()) {
-            return 0;
-        }
-        _ctx->setTimeout(_timeout);
-        return _ctx->write(stream);
     }
 
     void TcpClient::writeChunk(const uint8_t *data, const size_t size) const {
@@ -255,96 +173,36 @@ namespace async_tcp {
         _ctx->writeChunk(data, size);
     }
 
-    int TcpClient::available() {
-        if (!_ctx) {
-            return 0;
-        }
-
-        return static_cast<int>(_ctx->getSize());
-    }
-
-    int TcpClient::read() {
-        if (!available()) {
-            return -1;
-        }
-        return _ctx->read();
-    }
-
-    int TcpClient::read(uint8_t *buf, const size_t size) {
-        return static_cast<int>(
-            _ctx->read(reinterpret_cast<char *>(buf), size));
-    }
-
-    int TcpClient::read(char *buf, const size_t size) const {
-        return static_cast<int>(_ctx->read(buf, size));
-    }
-
-    int TcpClient::peek() {
-        if (!_ctx) {
-            return -1;
-        }
-        return _ctx->peek();
-    }
-
-    size_t TcpClient::peekBytes(uint8_t *buffer, const size_t length) {
-        if (!_ctx) {
-            return 0;
-        }
-        return _ctx->peekBytes(reinterpret_cast<char *>(buffer), length);
-    }
-
-    const char *TcpClient::peekBuffer() const {
-        if (!_ctx) {
-            return nullptr;
-        }
-        return _ctx->peekBuffer();
-    }
-
-    size_t TcpClient::peekAvailable() const {
-        if (!_ctx) {
-            return 0;
-        }
-        return _ctx->peekAvailable();
-    }
-
-    void TcpClient::peekConsume(const size_t size) const {
-        if (!_ctx) {
-            return;
-        }
-        _ctx->peekConsume(size);
-    }
-
-    bool TcpClient::flush(unsigned int maxWaitMs) const {
-        if (!_ctx) {
-            return true;
-        }
-
-        if (maxWaitMs == 0) {
-            maxWaitMs = ASYNC_TCP_CLIENT_MAX_FLUSH_WAIT_MS;
-        }
-        return _ctx->wait_until_acked(static_cast<int>(maxWaitMs));
-    }
-
     bool TcpClient::stop(const unsigned int maxWaitMs) const {
         if (!_ctx) {
             return true;
         }
 
-        bool ret = flush(maxWaitMs); // virtual, may be ssl's
+        bool ret = true; // do not flush
         if (_ctx->close() != ERR_OK) {
             ret = false;
         }
         return ret;
     }
 
-    uint8_t TcpClient::connected() {
-        if (!_ctx || _ctx->state() == CLOSED) {
-            return CLOSED;
+    bool TcpClient::shutdown(const unsigned int maxWaitMs) {
+        // First call stop() to close the connection
+        const bool ret = stop(maxWaitMs);
+
+        // Clean up the context
+        if (_ctx) {
+            delete _ctx;
+            _ctx = nullptr;
         }
 
-        return _ctx->state() == ESTABLISHED || available();
+        return ret;
     }
 
+    /**
+     * Get PCB state.
+     * This function is thread safe.
+     * @return uint8_t
+     */
     uint8_t TcpClient::status() {
         return m_sync_accessor->status();
     }
@@ -356,8 +214,11 @@ namespace async_tcp {
         return _ctx->state();
     }
 
-    TcpClient::operator bool() { return available() || connected(); }
-
+    /**
+     * Used in onConnected callback. Calling the function from the async context
+     * is thread safe.
+     * @return AIPAddress
+     */
     [[maybe_unused]] AIPAddress TcpClient::remoteIP() const {
         if (!_ctx || !_ctx->getRemoteAddress()) {
             return {0};
@@ -366,7 +227,12 @@ namespace async_tcp {
         return _ctx->getRemoteAddress();
     }
 
+    /**
+     * @deprecated
+     * @return uint16_t
+     */
     [[maybe_unused]] uint16_t TcpClient::remotePort() const {
+        assert(true);
         if (!_ctx) {
             return 0;
         }
@@ -374,6 +240,11 @@ namespace async_tcp {
         return _ctx->getRemotePort();
     }
 
+    /**
+     * Used in onConnected callback. Calling the function from the async context
+     * is thread safe.
+     * @return AIPAddress
+     */
     AIPAddress TcpClient::localIP() const {
         if (!_ctx || !_ctx->getLocalAddress()) {
             return {0};
@@ -382,7 +253,12 @@ namespace async_tcp {
         return {_ctx->getLocalAddress()};
     }
 
+    /**
+     * @deprecated
+     * @return uint16_t
+     */
     [[maybe_unused]] uint16_t TcpClient::localPort() const {
+        assert(true);
         if (!_ctx) {
             return 0;
         }
@@ -390,49 +266,52 @@ namespace async_tcp {
         return _ctx->getLocalPort();
     }
 
-    [[maybe_unused]] void TcpClient::stopAll() {
-        for (TcpClient *it = _s_first; it; it = it->_next) {
-            it->stop();
-        }
-    }
-
-    [[maybe_unused]] void TcpClient::stopAllExcept(const TcpClient *client) {
-        // Stop all will look at the lowest-level wrapper connections only
-        while (client->_owned) {
-            client = client->_owned;
-        }
-        for (TcpClient *it = _s_first; it; it = it->_next) {
-            TcpClient *conn = it;
-            // Find the lowest-level owner of the current list entry
-            while (conn->_owned) {
-                conn = conn->_owned;
-            }
-            if (conn != client) {
-                conn->stop();
-            }
-        }
-    }
-
+    /**
+     * Used in onConnected callback. Calling the function from the async context
+     * is thread safe.
+     * @return void
+     */
     void TcpClient::keepAlive(const uint16_t idle_sec, const uint16_t intv_sec,
                               const uint8_t count) const {
         _ctx->keepAlive(idle_sec, intv_sec, count);
     }
 
+    /**
+     * @deprecated
+     * @return void
+     */
     [[maybe_unused]] bool TcpClient::isKeepAliveEnabled() const {
+        assert(true);
         return _ctx->isKeepAliveEnabled();
     }
 
+    /**
+     * @deprecated
+     * @return uint16_t
+     */
     [[maybe_unused]] uint16_t TcpClient::getKeepAliveIdle() const {
+        assert(true);
         return _ctx->getKeepAliveIdle();
     }
 
+    /**
+     * @deprecated
+     * @return uint16_t
+     */
     [[maybe_unused]] uint16_t TcpClient::getKeepAliveInterval() const {
+        assert(true);
         return _ctx->getKeepAliveInterval();
     }
 
+    /**
+     * @deprecated
+     * @return uint16_t
+     */
     [[maybe_unused]] uint8_t TcpClient::getKeepAliveCount() const {
+        assert(true);
         return _ctx->getKeepAliveCount();
     }
+
     void TcpClient::setOnReceivedCallback(std::unique_ptr<PerpetualBridge> bridge) {
         _received_callback_bridge = std::move(bridge);
     }
@@ -443,8 +322,8 @@ namespace async_tcp {
         _connected_callback_bridge = std::move(bridge);
     }
 
-    void TcpClient::setOnClosedCallback(std::unique_ptr<PerpetualBridge> bridge) {
-        _closed_callback_bridge = std::move(bridge);
+    void TcpClient::setOnFinCallback(std::unique_ptr<PerpetualBridge> bridge) {
+        _fin_callback_bridge = std::move(bridge);
     }
 
     void TcpClient::_onConnectCallback() const {
@@ -459,15 +338,16 @@ namespace async_tcp {
         }
     }
 
-    void TcpClient::_onCloseCallback() const {
-        DEBUGWIRE("[TcpClient][%d] TcpClient::_onCloseCallback(): Connection closed.\n", getClientId());
+    void TcpClient::_onFinCallback() const {
+        DEBUGWIRE("[TcpClient][%d] TcpClient::_onFinCallback(): FIN received.\n", getClientId());
         if (m_writer) {
-            m_writer->onError(ERR_CLSD); // Always notify writer on close
+            m_writer->onError(ERR_CLSD); // Always notify the Writer class on close.
         }
-        if (_closed_callback_bridge) {
-            _closed_callback_bridge->run();
+        if (_fin_callback_bridge) {
+            _fin_callback_bridge->workload(_ctx->getRxBuffer());
+            _fin_callback_bridge->run();
         } else {
-            DEBUGWIRE("[TcpClient][%d] TcpClient::_onCloseCallback: No event handler\n", getClientId());
+            DEBUGWIRE("[TcpClient][%d] TcpClient::_onFinCallback: No event handler\n", getClientId());
         }
     }
 
@@ -480,7 +360,7 @@ namespace async_tcp {
 
     void TcpClient::_onReceiveCallback() const {
         if (_received_callback_bridge) {
-            _received_callback_bridge->workload(_rx);
+            _received_callback_bridge->workload(_ctx->getRxBuffer());
             _received_callback_bridge->run();
         } else {
             DEBUGWIRE("[TcpClient][%d] TcpClient::_onReceiveCallback: No event handler\n", getClientId());

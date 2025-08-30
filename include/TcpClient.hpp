@@ -35,10 +35,8 @@
 
 #include "WiFi.h"
 
-#include "Client.h"
 #include "IoRxBuffer.hpp"
 #include "PerpetualBridge.hpp"
-#include "Print.h"
 #include "TcpWriter.hpp"
 #include "TcpClientSyncAccessor.hpp"
 #include <memory>
@@ -77,12 +75,11 @@ namespace async_tcp {
      * This class implements a TCP client that supports asynchronous operations.
      * It derives from the Arduino Client and SList for managing client lists.
      */
-    class TcpClient : public arduino::Client,
-                           public SList<TcpClient> {
+    class TcpClient {
 
         protected:
             /**
-             * @brief Protected constructor to initialize the AsyncTcpClient
+             * @brief A protected constructor to initialize the AsyncTcpClient
              * with a specific context.
              * @param ctx Pointer to an AsyncTcpClientContext object.
              */
@@ -98,76 +95,6 @@ namespace async_tcp {
              * @brief Destructor for the AsyncTcpClient class.
              */
             virtual ~TcpClient();
-
-            /**
-             * @brief Copy constructor for AsyncTcpClient.
-             *
-             * This constructor creates a new instance of `AsyncTcpClient` by
-             * copying the state of another `AsyncTcpClient` object. It performs
-             * a shallow copy of the internal context (`_ctx`), increments the
-             * reference count for the context using `ref()`, and adds the new
-             * object to the `SList`.
-             *
-             * @note
-             * - The internal context (`_ctx`) is shared between the two
-             * instances, and its reference count is incremented to ensure
-             *   proper resource management.
-             * - The `_timeout`, `_localPort`, and `_owned` members are copied
-             * from the source object (`other`).
-             * - The new client is automatically added to the `SList` upon
-             * creation.
-             */
-            TcpClient(const TcpClient &);
-
-            /**
-             * @brief Assignment operator for AsyncTcpClient.
-             *
-             * Assigns the state of another AsyncTcpClient object to this one.
-             * This operator manages the internal client context (_ctx),
-             * ensuring proper reference counting by un-referencing the current
-             * context and referencing the new context from the source object.
-             * It also copies other relevant internal properties such as
-             * timeouts and ownership state.
-             *
-             * @return AsyncTcpClient& A reference to the updated AsyncTcpClient
-             * object.
-             *
-             * @note This operator handles self-assignment by checking if the
-             * current object is the same as the source object. In the case of
-             * self-assignment, no changes are made to prevent unnecessary
-             * operations.
-             *
-             * @warning Proper memory management is ensured by calling
-             * `_ctx->unref()` for the current context (if it exists), ensuring
-             * proper resource cleanup when the reference count reaches zero.
-             * before assigning the new context,
-             * `_ctx->ref()` is called after assignment to update reference
-             * counting.
-             */
-            TcpClient &operator=(const TcpClient &);
-
-            /**
-             * @brief Creates a copy of the current AsyncTcpClient object.
-             *
-             * This method creates a new instance of `AsyncTcpClient` by copying
-             * the current object. It returns a unique pointer to the newly
-             * created instance. The method is virtual to support polymorphic
-             * behavior and ensure that derived classes can implement their own
-             * `clone()` method to prevent object slicing.
-             *
-             * @return std::unique_ptr<AsyncTcpClient> A unique pointer to the
-             * copied `AsyncTcpClient` object.
-             *
-             * @warning This method, as currently implemented, may cause object
-             * slicing if used on a derived class. The derived class should
-             * override the `clone()` method to return a unique pointer to its
-             * own type.
-             *
-             * @see The C++ Core Guidelines on copying virtual classes:
-             * https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rc-copy-virtual
-             */
-            [[maybe_unused]] [[nodiscard]] virtual std::unique_ptr<TcpClient>
-            clone() const;
 
             virtual uint8_t status();
 
@@ -220,7 +147,7 @@ namespace async_tcp {
              * creating a new one, resource leaks and unintended behavior from
              * shared state are avoided.
              */
-            int connect(AIPAddress ip, uint16_t port) override;
+            int connect(AIPAddress ip, uint16_t port);
 
             /**
              * @brief Establish an asynchronous connection to a remote host
@@ -244,7 +171,7 @@ namespace async_tcp {
              * reference counting of `_ctx` using `ref()` and `unref()`, is
              * handled by the IP-based `connect()` method.
              */
-            int connect(const char *host, uint16_t port) override;
+            int connect(const char *host, uint16_t port);
 
             /**
              * @brief Establish an asynchronous connection to a remote host
@@ -269,11 +196,9 @@ namespace async_tcp {
              */
             virtual int connect(const AString &host, uint16_t port);
 
-            size_t write(uint8_t b) override;
+            [[nodiscard]] size_t write(uint8_t b) const;
 
-            size_t write(const uint8_t *buf, size_t size) override;
-
-            size_t write(Stream &stream) const;
+            size_t write(const uint8_t *buf, size_t size) const;
 
             /**
              * @brief Write a single chunk directly to TCP connection.
@@ -287,43 +212,25 @@ namespace async_tcp {
              */
             void writeChunk(const uint8_t* data, size_t size) const;
 
-            int available() override;
-
-            int read() override;
-
-            int read(uint8_t *buf, size_t size) override;
-
-            int read(char *buf, size_t size) const;
-
-            int peek() override;
-
-            virtual size_t peekBytes(uint8_t *buffer, size_t length);
-
-            [[maybe_unused]] size_t peekBytes(char *buffer,
-                                              const size_t length) {
-                return peekBytes(reinterpret_cast<uint8_t *>(buffer), length);
+            void stop() const {
+                if (const auto err = stop(0); err == false) {
+                    DEBUGWIRE("[:i%d] :stop timeout\n", getClientId());
+                }
             }
-
-            [[nodiscard]] const char *peekBuffer() const;
-
-            [[nodiscard]] size_t peekAvailable() const;
-
-            void peekConsume(size_t size) const;
-
-            void flush() override {
-                (void)flush(0); // wait for all outgoing characters to be sent,
-                                // output buffer should be empty after this call
-            }
-
-            void stop() override { (void)stop(0); }
-
-            [[nodiscard]] bool flush(unsigned int maxWaitMs) const;
 
             [[nodiscard]] bool stop(unsigned int maxWaitMs) const;
 
-            uint8_t connected() override;
-
-            explicit operator bool() override;
+            /**
+             * @brief Properly shutdown the connection and clean up resources.
+             *
+             * This method calls stop() to close the connection and then sets
+             * both _ctx and _rx to nullptr, ensuring the TcpClient is in a
+             * clean state for subsequent connect() calls.
+             *
+             * @param maxWaitMs Maximum time to wait for connection closure
+             * @return true if shutdown was successful, false otherwise
+             */
+            bool shutdown(unsigned int maxWaitMs = 0);
 
             [[maybe_unused]] [[nodiscard]] AIPAddress remoteIP() const;
 
@@ -338,16 +245,7 @@ namespace async_tcp {
                 _localPort = port;
             }
 
-            int availableForWrite() override;
-
-            friend class WiFiServer;
             friend class TcpClientSyncAccessor;
-
-            using Print::write;
-
-            [[maybe_unused]] static void stopAll();
-
-            [[maybe_unused]] static void stopAllExcept(const TcpClient *client);
 
             void
             keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC,
@@ -378,9 +276,9 @@ namespace async_tcp {
 
             void setNoDelay(bool no_delay) const;
 
-            void setOnReceivedCallback(PerpetualBridgePtr bridge);
+            void setOnReceivedCallback(std::unique_ptr<PerpetualBridge> bridge);
             void setOnConnectedCallback(PerpetualBridgePtr bridge);
-            void setOnClosedCallback(PerpetualBridgePtr bridge);
+            void setOnFinCallback(std::unique_ptr<PerpetualBridge> bridge);
             void setOnWriterErrorCallback(PerpetualBridgePtr bridge);
 
             /**
@@ -406,10 +304,6 @@ namespace async_tcp {
              */
             void setSyncAccessor(TcpClientSyncAccessorPtr accessor);
 
-            [[nodiscard]] IoRxBuffer *getRxBuffer() const {
-                return _rx;
-            }
-
             // Method needed for the "jump" pattern in static callbacks
             [[nodiscard]] TcpClientContext *getContext() const {
                 return _ctx;
@@ -423,15 +317,19 @@ namespace async_tcp {
                 return m_sync_accessor.get();
             }
 
+            /**
+             * @brief Get the client ID (for internal logging)
+             * @return uint8_t client id
+             */
+            [[nodiscard]] uint8_t getClientId() const { return m_client_id; }
+
         protected:
             PerpetualBridgePtr _received_callback_bridge;
             PerpetualBridgePtr _connected_callback_bridge;
-            PerpetualBridgePtr _closed_callback_bridge;
+            PerpetualBridgePtr _fin_callback_bridge;
             PerpetualBridgePtr _writer_error_callback_bridge;
 
             TcpClientContext *_ctx;
-
-            TcpClient *_owned;
 
             static uint16_t _localPort;
 
@@ -443,7 +341,7 @@ namespace async_tcp {
 
             void _onConnectCallback() const;
 
-            void _onCloseCallback() const;
+            void _onFinCallback() const;
 
             void _onErrorCallback(err_t err) const;
 
@@ -453,13 +351,10 @@ namespace async_tcp {
 
             void checkAndHandleWriteTimeout() const;
         private:
-            IoRxBuffer *_rx;
+            unsigned long _timeout;      // number of milliseconds to wait for the next char before aborting timed read
 
             virtual uint8_t _ts_status();
-            /**
-             * @brief Get the client ID (for internal logging)
-             * @return uint8_t client id
-             */
-            [[nodiscard]] uint8_t getClientId() const { return m_client_id; }
+            // Thread-context correct connect implementation (must be called under async-context lock on networking core)
+            int _ts_connect(AIPAddress ip, uint16_t port);
     };
 } // namespace AsyncTcp

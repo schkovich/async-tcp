@@ -273,6 +273,7 @@ namespace async_tcp {
             void setOnFinCallback(PerpetualBridgePtr bridge);
             void setOnErrorCallback(PerpetualBridgePtr bridge);
             void setOnPollCallback(PerpetualBridgePtr bridge);
+            void setOnAckCallback(PerpetualBridgePtr bridge);
 
             /**
              * @brief Set the TcpWriter for chunked write operations
@@ -322,6 +323,7 @@ namespace async_tcp {
             PerpetualBridgePtr _fin_callback_bridge;
             PerpetualBridgePtr _error_callback_bridge;
             PerpetualBridgePtr _poll_callback_bridge;
+            PerpetualBridgePtr _ack_callback_bridge;
 
             TcpClientContext *_ctx;
 

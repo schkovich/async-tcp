@@ -370,11 +370,11 @@ namespace async_tcp {
                                    const uint16_t len) const {
         (void)tpcb;  // PCB parameter not needed
 
-        // If writer is configured, delegate ACK handling to it
-        if (m_writer) {
-            m_writer->onAckReceived(len);
-        } else {
-            DEBUGWIRE("[TcpClient][%d] TcpClient::_onAckCallback: ACK received for %u bytes but no writer configured\n", getClientId(), len);
+        // Dispatch ACK handling bridge (if any) with len payload
+        if (_ack_callback_bridge) {
+            auto *len_ptr = new uint16_t(len);
+            _ack_callback_bridge->workload(len_ptr);
+            _ack_callback_bridge->run();
         }
     }
 
@@ -388,6 +388,10 @@ namespace async_tcp {
 
     void TcpClient::setOnPollCallback(PerpetualBridgePtr bridge) {
         _poll_callback_bridge = std::move(bridge);
+    }
+
+    void TcpClient::setOnAckCallback(PerpetualBridgePtr bridge) {
+        _ack_callback_bridge = std::move(bridge);
     }
 
     void TcpClient::setSyncAccessor(TcpClientSyncAccessorPtr accessor) {

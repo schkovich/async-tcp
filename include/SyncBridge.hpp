@@ -200,7 +200,7 @@ namespace async_tcp {
              * ownership)
              * @return Result code from the operation
              */
-            uint32_t executeWork(std::unique_ptr<PerpetualWorker> worker,
+            [[nodiscard]] uint32_t executeWork(std::unique_ptr<PerpetualWorker> worker,
                                  std::unique_ptr<ExecutionContext> exec_ctx,
                                  std::unique_ptr<semaphore_t> semaphore) const;
 
@@ -218,6 +218,14 @@ namespace async_tcp {
              * @return uint32_t Result code from the operation
              */
             uint32_t doExecute(SyncPayloadPtr payload);
+
+            [[nodiscard]] bool isCrossCore() const {
+                return m_ctx.getCore() != get_core_num();
+            }
+
+            // Acquire/release the async context lock for same-core safe sections
+            void ctxLock() const { m_ctx.acquireLock(); }
+            void ctxUnlock() const { m_ctx.releaseLock(); }
 
             /**
              * @brief Friend function for PerpetualWorker handler,

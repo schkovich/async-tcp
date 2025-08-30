@@ -18,6 +18,15 @@ namespace async_tcp {
         : SyncBridge(ctx), m_io(io) {}
 
     uint8_t TcpClientSyncAccessor::status() {
+        // Same-core: take the async context lock and read directly
+        if (!isCrossCore()) {
+            ctxLock();
+            const uint8_t v = m_io._ts_status();
+            ctxUnlock();
+            return v;
+        }
+
+        // Cross-core: execute via bridge to run in the networking context
         uint8_t result = 0;
         auto payload = std::make_unique<StatusPayload>();
         payload->result_ptr = &result;
@@ -26,7 +35,6 @@ namespace async_tcp {
                 "[ERROR] TcpClientSyncAccessor::status() returned error %d.\n",
                 res);
         }
-
         return result;
     }
 

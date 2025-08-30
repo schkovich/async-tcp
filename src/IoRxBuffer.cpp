@@ -3,123 +3,175 @@
 //
 #include "IoRxBuffer.hpp"
 
-#include "TcpClient.hpp"
+#include "TcpClientContext.hpp"
+#include <algorithm>
+#include <cassert>
+
 namespace async_tcp {
 
-        err_t lwip_receive_callback(void *arg, tcp_pcb *tpcb, pbuf *p,
-                                    err_t err) {
-            (void) err; // Acknowledge unused parameter
+    err_t lwip_receive_callback(void *arg, tcp_pcb *tpcb, pbuf *p, err_t err) {
 
-            // In embedded systems, these should never be null during normal operation
-            // If they are, it's a fundamental initialization failure
-            assert(arg);
-            const auto *client = static_cast<TcpClient *>(arg);
+        // In embedded systems, these should never be null during normal
+        // operation If they are, it's a fundamental initialization failure.
+        assert(arg);
+        const auto *ctx = static_cast<TcpClientContext *>(arg);
 
-            const auto rx_buffer = client->getRxBuffer();
-            assert(rx_buffer);
+        const auto rx_buffer = ctx->getRxBuffer();
+        assert(rx_buffer);
 
-            rx_buffer->_pcb = tpcb;
-            // The remote peer sends a TCP segment with the FIN flag set to
-            // close.
-            if (p == nullptr) {
-                // Step 1: First flush any remaining data in the buffer to the application
-                if (rx_buffer->_head && rx_buffer->_head->tot_len) {
-                    rx_buffer->_onReceivedCallback();
-                    return ERR_OK;
+        // ReSharper disable once CppDFAUnreachableCode
+        rx_buffer->_pcb = tpcb;
+
+        // If lwIP reports an error with a non-null pbuf, free it and
+        // propagate the error to avoid leaking the pbuf
+        if (err != ERR_OK) {
+            if (p) {
+                pbuf_free(p);
+            }
+            return err;
+        }
+
+        // The remote peer sends a TCP segment with the FIN flag set to close.
+        if (p == nullptr) {
+            DEBUGWIRE("[:i%d] :rxclb st=%d\n", ctx->getClientId(),
+                      tpcb->state);
+
+            // FIN received — connection is closing
+            rx_buffer->_onFinCallback();
+
+            return ERR_ABRT;
+        }
+
+        // Normal case: append new data or take ownership of first pbuf
+        if (rx_buffer->_head) {
+            DEBUGWIRE("[:i%d] :rxclb cat h%p p=%p\n", ctx->getClientId(),
+                      rx_buffer->_head, p);
+            // Append to existing buffer chain (different pbuf)
+            pbuf_cat(rx_buffer->_head, p);
+        } else {
+            DEBUGWIRE("[:i%d] :rxclb new h%p = p=%p\n", ctx->getClientId(),
+                      rx_buffer->_head, p);
+            // No existing data - take ownership of new pbufNo existing data - take ownership of new pbuf
+            rx_buffer->_head = p;
+            rx_buffer->_offset = 0;
+        }
+
+        // Notify application that new data is available
+        rx_buffer->_onReceivedCallback();
+
+        // We took ownership of the pbuf, so return ERR_OK
+        return ERR_OK;
+    }
+
+    void IoRxBuffer::_onReceivedCallback() const {
+        if (_receivedCb)
+            _receivedCb();
+    }
+
+    void IoRxBuffer::_onFinCallback() const {
+
+        if (_finCb) {
+            _finCb();
+        }
+    }
+
+    IoRxBuffer::IoRxBuffer(pbuf *chain) { _head = chain; }
+
+    void IoRxBuffer::reset() {
+        if (_head) {
+            pbuf_free(_head);
+            _head = nullptr;
+            _offset = 0;
+            _pcb = nullptr;
+        }
+    }
+
+    std::size_t IoRxBuffer::size() { return 0; }
+
+    char IoRxBuffer::peek() const {
+        if (!_head) {
+            return 0;
+        }
+        return static_cast<char *>(_head->payload)[_offset];
+    }
+
+    std::size_t IoRxBuffer::peekAvailable() const {
+        if (!_head) {
+            return 0;
+        }
+        return _head->len - _offset;
+    }
+
+    const char *IoRxBuffer::peekBuffer() const {
+        if (!_head) {
+            return nullptr;
+        }
+        return static_cast<const char *>(_head->payload) + _offset;
+    }
+
+    void IoRxBuffer::peekConsume(const std::size_t n) {
+        // Guard against empty buffers or zero‑length requests
+        if (n == 0 || !_head) {
+            return;
+        }
+
+        std::size_t consumed = 0;          // total bytes actually removed
+        std::size_t remaining = n;         // bytes still to consume
+
+        // Fast‑path: everything fits in the current pbuf
+        if (std::size_t available = _head->len - _offset;
+            remaining <= available) {
+            _offset += remaining;
+            consumed = remaining;
+        } else {
+            // Slow‑path: consume whole pbufs until we satisfy the request.
+            while (remaining > 0 && _head) {
+                available = _head->len - _offset;
+
+                if (remaining < available) {
+                    // Partial consumption of the current pbuf
+                    _offset += remaining;
+                    consumed += remaining;
+                    break;          // Exit consumption loop now
                 }
 
-                // Step 2: Then notify the application about connection closing
-                rx_buffer->_onClosedCallback();
+                // Consume the rest of this pbuf
+                consumed += available;
+                remaining -= available;
 
-                // Step 3: Finally free resources and reset buffer state
-                if (rx_buffer->_head) {
-                    pbuf_free(rx_buffer->_head);
-                    rx_buffer->_head = nullptr;
-                    rx_buffer->_offset = 0;
-                }
-
-                return ERR_ABRT;
-            }
-
-            // CRITICAL: Check if we already own this pbuf (_head == p)
-            // This can happen if lwIP retries the callback
-            if (rx_buffer->_head == p) {
-                // We already own this pbuf, just notify application
-                rx_buffer->_onReceivedCallback();
-                return ERR_OK;
-            }
-
-            // Normal case: append new data or take ownership of first pbuf
-            if (rx_buffer->_head) {
-                // Append to existing buffer chain (different pbuf)
-                pbuf_cat(rx_buffer->_head, p);
-            } else {
-                // No existing data - take ownership of new pbuf
-                rx_buffer->_head = p;
-                rx_buffer->_offset = 0;
-            }
-
-            // Notify application that new data is available
-            rx_buffer->_onReceivedCallback();
-
-            // We took ownership of the pbuf, so return ERR_OK
-            return ERR_OK;
-        }
-
-        void IoRxBuffer::_onReceivedCallback() const {
-            if (_receivedCb) _receivedCb();
-        }
-
-        void IoRxBuffer::_onClosedCallback() const {
-            if (_closedCb) {
-                _closedCb();
-            }
-        }
-
-        IoRxBuffer::IoRxBuffer(pbuf *chain) { _head = chain; }
-
-        std::size_t IoRxBuffer::size() { return 0; }
-
-        std::size_t IoRxBuffer::peekAvailable() const {
-            if (!_head) {
-                return 0;
-            }
-            return _head->len - _offset;
-        }
-
-        const char *IoRxBuffer::peekBuffer() const {
-            if (!_head) {
-                return nullptr;
-            }
-            return static_cast<const char *>(_head->payload) + _offset;
-        }
-
-        void IoRxBuffer::peekConsume(const std::size_t n) {
-            if (const auto left =
-                    static_cast<ptrdiff_t>(_head->len - _offset - n);
-                left > 0) {
-                _offset += n;
-            } else if (!_head->next) {
-                const auto head = _head;
-                _head = nullptr;
-                _offset = 0;
-                pbuf_free(head);
-            } else {
-                const auto head = _head;
+                // Save a pointer to the pbuf we are about to free.
+                pbuf* old = _head;
+                // Advance to the next segment (may become nullptr).
                 _head = _head->next;
+                // Reset offset for the new head
                 _offset = 0;
-                pbuf_ref(_head);
-                pbuf_free(head);
+
+                // Keep the chain alive while we free the old segment.
+                if (_head) {
+                    pbuf_ref(_head);
+                }
+                pbuf_free(old);
             }
-            if (_pcb) {
-                tcp_recved(_pcb, n);
-            }
-        }
-        void IoRxBuffer::setOnClosedCallback(const closed_callback_t &cb) {
-            _closedCb = cb;
         }
 
-        void IoRxBuffer::setOnReceivedCallback(const received_callback_t &cb) {
-            _receivedCb = cb;
+        // Notify lwIP of the exact amount we have removed.
+        if (_pcb && consumed > 0) {
+            // tcp_recved takes a u16_t, so split large values.
+            std::size_t to_ack = consumed;
+            while (to_ack) {
+                const u16_t chunk =
+                    static_cast<u16_t>(std::min<std::size_t>(to_ack, 0xFFFF));
+                tcp_recved(_pcb, chunk);
+                to_ack -= chunk;
+            }
         }
+    }
+
+    void IoRxBuffer::setOnFinCallback(const fin_callback_t &cb) {
+        _finCb = cb;
+    }
+
+    void IoRxBuffer::setOnReceivedCallback(const received_callback_t &cb) {
+        _receivedCb = cb;
+    }
 } // namespace async_tcp

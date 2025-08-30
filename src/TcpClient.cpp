@@ -347,10 +347,15 @@ namespace async_tcp {
 
     void TcpClient::_onErrorCallback(const err_t err) const {
         DEBUGWIRE("[TcpClient][%d] The ctx failed with the error code: %d", getClientId(), err);
-        if (m_writer) {
-            m_writer->onError(err);
-        }
-    }
+
+        // Dispatch error handling via PerpetualBridge if provided
+        if (_error_callback_bridge) {
+            // Pass error code to the handler via workload() using heap allocation
+            auto *err_ptr = new err_t(err);
+            _error_callback_bridge->workload(err_ptr);
+             _error_callback_bridge->run();
+         }
+     }
 
     void TcpClient::_onReceiveCallback() const {
         if (_received_callback_bridge) {
@@ -375,6 +380,10 @@ namespace async_tcp {
 
     void TcpClient::setWriter(TcpWriterPtr writer) {
         m_writer = std::move(writer);
+    }
+
+    void TcpClient::setOnErrorCallback(PerpetualBridgePtr bridge) {
+        _error_callback_bridge = std::move(bridge);
     }
 
     void TcpClient::setOnPollCallback(PerpetualBridgePtr bridge) {

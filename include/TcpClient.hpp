@@ -271,7 +271,7 @@ namespace async_tcp {
             void setOnReceivedCallback(PerpetualBridgePtr bridge);
             void setOnConnectedCallback(PerpetualBridgePtr bridge);
             void setOnFinCallback(PerpetualBridgePtr bridge);
-            void setOnWriterErrorCallback(PerpetualBridgePtr bridge);
+            void setOnErrorCallback(PerpetualBridgePtr bridge);
             void setOnPollCallback(PerpetualBridgePtr bridge);
 
             /**
@@ -320,7 +320,7 @@ namespace async_tcp {
             PerpetualBridgePtr _received_callback_bridge;
             PerpetualBridgePtr _connected_callback_bridge;
             PerpetualBridgePtr _fin_callback_bridge;
-            PerpetualBridgePtr _writer_error_callback_bridge;
+            PerpetualBridgePtr _error_callback_bridge;
             PerpetualBridgePtr _poll_callback_bridge;
 
             TcpClientContext *_ctx;

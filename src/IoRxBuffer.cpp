@@ -9,6 +9,20 @@
 
 namespace async_tcp {
 
+    /**
+     * @brief lwIP tcp_recv bridge.
+     *
+     * Behavior:
+     * - When err != ERR_OK: frees p (if non-null) and returns the error.
+     * - When p == nullptr: FIN indicated; notifies FIN callback and returns
+     *   ERR_ABRT to stop further receives.
+     * - Otherwise: appends p to the existing chain (or takes ownership if
+     *   no head), then notifies the receive callback and returns ERR_OK.
+     *
+     * Notes:
+     * - Stores the pcb pointer for later tcp_recved() window updates.
+     * - IoRxBuffer owns the pbuf chain after this call.
+     */
     err_t lwip_receive_callback(void *arg, tcp_pcb *tpcb, pbuf *p, err_t err) {
 
         // In embedded systems, these should never be null during normal
@@ -63,11 +77,17 @@ namespace async_tcp {
         return ERR_OK;
     }
 
+    /**
+     * @brief Notify application of new data arrival (if registered).
+     */
     void IoRxBuffer::_onReceivedCallback() const {
         if (_receivedCb)
             _receivedCb();
     }
 
+    /**
+     * @brief Notify application that a FIN was received (if registered).
+     */
     void IoRxBuffer::_onFinCallback() const {
 
         if (_finCb) {
@@ -75,8 +95,91 @@ namespace async_tcp {
         }
     }
 
+    /**
+     * @brief Free current head segment and advance to next.
+     *
+     * After calling, _head may become nullptr and _offset is reset to 0.
+     * Keeps the chain alive via pbuf_ref() while freeing the old segment.
+     */
+    void IoRxBuffer::_free() {
+        // Save a pointer to the pbuf we are about to free.
+        pbuf* old = _head;
+        // Advance to the next segment (may become nullptr).
+        _head = _head->next;
+        // Reset offset for the new head
+        _offset = 0;
+
+        // Keep the chain alive while we free the old segment.
+        if (_head) {
+            pbuf_ref(_head);
+        }
+        pbuf_free(old);
+    }
+
+    /**
+     * @brief Fast path consumption within a single pbuf.
+     *
+     * Advances offset by remaining; if the segment is exactly exhausted,
+     * calls _free() to advance to the next pbuf.
+     * @return bytes consumed (equal to remaining)
+     */
+    std::size_t IoRxBuffer::_fastPath(const std::size_t remaining) {
+        _offset += remaining;
+        const auto consumed = remaining;
+        // If we exactly consumed the remainder of this pbuf, advance and free it
+        if (_offset == _head->len) {
+            _free();
+        }
+        return consumed;
+    }
+
+    /**
+     * @brief Slow path crossing segment boundaries.
+     *
+     * Recomputes available per-iteration, accumulates consumed across pbufs,
+     * and frees segments as necessary until the request is satisfied or the
+     * chain ends.
+     * @return total bytes consumed (<= requested)
+     */
+    std::size_t IoRxBuffer::_slowPath(std::size_t remaining) {
+        // Slow‑path: consume whole pbufs until we satisfy the request.
+        std::size_t consumed = 0;          // total bytes actually removed
+        while (remaining > 0 && _head) {
+            const std::size_t available = _head->len - _offset;
+            if (remaining < available) {
+                // Partial consumption of the current pbuf
+                _offset += remaining;
+                consumed += remaining;
+                return consumed; // Exit consumption loop now
+            }
+            // Consume the rest of this pbuf
+            consumed += available;
+            remaining -= available;
+            _free();
+        }
+        return consumed;
+    }
+
+    /**
+     * @brief Acknowledge consumed bytes to lwIP (tcp_recved in u16_t chunks).
+     */
+    void IoRxBuffer::_toAck(const std::size_t consumed) const {
+        // tcp_recved takes a u16_t, so split large values.
+        std::size_t to_ack = consumed;
+        while (to_ack) {
+            const u16_t chunk =
+                static_cast<u16_t>(std::min<std::size_t>(to_ack, 0xFFFF));
+            tcp_recved(_pcb, chunk);
+            to_ack -= chunk;
+        }
+
+    }
+
     IoRxBuffer::IoRxBuffer(pbuf *chain) { _head = chain; }
 
+    /**
+     * @brief Reset buffer state and release any remaining pbufs.
+     */
     void IoRxBuffer::reset() {
         if (_head) {
             pbuf_free(_head);
@@ -109,61 +212,33 @@ namespace async_tcp {
         return static_cast<const char *>(_head->payload) + _offset;
     }
 
+    /**
+     * @brief Consume n bytes, choosing fast or slow path.
+     *
+     * Notifies lwIP of the exact number of bytes removed from the receive
+     * window using tcp_recved().
+     */
     void IoRxBuffer::peekConsume(const std::size_t n) {
         // Guard against empty buffers or zero‑length requests
         if (n == 0 || !_head) {
             return;
         }
 
+        const std::size_t available = _head->len - _offset;
+        const std::size_t remaining = n;         // bytes still to consume
         std::size_t consumed = 0;          // total bytes actually removed
-        std::size_t remaining = n;         // bytes still to consume
 
         // Fast‑path: everything fits in the current pbuf
-        if (std::size_t available = _head->len - _offset;
-            remaining <= available) {
-            _offset += remaining;
-            consumed = remaining;
+        if (remaining <= available) {
+            consumed = _fastPath(remaining);
         } else {
             // Slow‑path: consume whole pbufs until we satisfy the request.
-            while (remaining > 0 && _head) {
-                available = _head->len - _offset;
-
-                if (remaining < available) {
-                    // Partial consumption of the current pbuf
-                    _offset += remaining;
-                    consumed += remaining;
-                    break;          // Exit consumption loop now
-                }
-
-                // Consume the rest of this pbuf
-                consumed += available;
-                remaining -= available;
-
-                // Save a pointer to the pbuf we are about to free.
-                pbuf* old = _head;
-                // Advance to the next segment (may become nullptr).
-                _head = _head->next;
-                // Reset offset for the new head
-                _offset = 0;
-
-                // Keep the chain alive while we free the old segment.
-                if (_head) {
-                    pbuf_ref(_head);
-                }
-                pbuf_free(old);
-            }
+            consumed = _slowPath(remaining);
         }
 
         // Notify lwIP of the exact amount we have removed.
         if (_pcb && consumed > 0) {
-            // tcp_recved takes a u16_t, so split large values.
-            std::size_t to_ack = consumed;
-            while (to_ack) {
-                const u16_t chunk =
-                    static_cast<u16_t>(std::min<std::size_t>(to_ack, 0xFFFF));
-                tcp_recved(_pcb, chunk);
-                to_ack -= chunk;
-            }
+            _toAck(consumed);
         }
     }
 

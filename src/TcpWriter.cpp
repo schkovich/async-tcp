@@ -54,7 +54,11 @@ namespace async_tcp {
     }
 
     void TcpWriter::onAckReceived(const uint16_t ack_len) {
-        assert(isWriteInProgress() && "ACK received but no write in progress");
+        // If a late ACK arrives after a timeout/error completed the write operation, ignore it.
+        if (!isWriteInProgress()) {
+            DEBUGWIRE("[TcpWriter] Late ACK: %u bytes received with no write in progress - ignoring\n", ack_len);
+            return;
+        }
 
         // Update progress based on ACKed bytes
         m_written += ack_len;
@@ -83,7 +87,7 @@ namespace async_tcp {
     }
 
     void TcpWriter::completeWrite() {
-        DEBUGWIRE("[TcpWriter] Write operation completed successfully\n");
+        DEBUGWIRE("[TcpWriter] Write operation finalized\n");
 
         // Reset state for next write
         m_data.reset();

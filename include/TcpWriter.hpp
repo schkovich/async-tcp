@@ -33,7 +33,7 @@ namespace async_tcp {
      */
     class TcpWriter final {
 
-            static constexpr uint64_t WRITE_TIMEOUT_US = 5000000;  ///< Write timeout in microseconds (5 seconds)
+            static constexpr uint64_t WRITE_TIMEOUT_US = 2000000;  ///< Write timeout in microseconds (2 seconds)
 
             const AsyncCtx & m_ctx;           ///< Context manager for worker execution
             TcpClient& m_io;                          ///< TCP client for write operations

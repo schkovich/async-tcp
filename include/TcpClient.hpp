@@ -139,7 +139,7 @@ namespace async_tcp {
              * creating a new one, resource leaks and unintended behavior from
              * shared state are avoided.
              */
-            int connect(AIPAddress ip, uint16_t port);
+            int connect(const AIPAddress& ip, uint16_t port);
 
             /**
              * @brief Establish an asynchronous connection to a remote host
@@ -351,6 +351,6 @@ namespace async_tcp {
 
             virtual uint8_t _ts_status();
             // Thread-context correct connect implementation (must be called under async-context lock on networking core)
-            int _ts_connect(AIPAddress ip, uint16_t port);
+            virtual int _ts_connect(AIPAddress ip, uint16_t port);
     };
 } // namespace AsyncTcp

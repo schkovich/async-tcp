@@ -8,9 +8,23 @@
 namespace async_tcp {
 
     uint32_t TcpClientSyncAccessor::onExecute(const SyncPayloadPtr payload) {
-        const auto *p = static_cast<StatusPayload *>(payload.get());
-        *p->result_ptr = m_io._ts_status();
-        return PICO_OK;
+        switch (const auto *p = static_cast<AccessorPayload *>(payload.get()); // NOLINT RTTI disabled
+                p->op) {
+        case AccessorPayload::STATUS:
+            if (p->result_ptr) {
+                *p->result_ptr = m_io._ts_status();
+                return PICO_OK;
+            }
+            return PICO_ERROR_NO_DATA;
+        case AccessorPayload::CONNECT:
+            if (p->ip_ptr && p->connect_result) {
+                *p->connect_result = m_io._ts_connect(*p->ip_ptr, p->port);
+                return PICO_OK;
+            }
+            return PICO_ERROR_NO_DATA;
+        default:
+            return PICO_ERROR_INVALID_ARG;
+        }
     }
 
     TcpClientSyncAccessor::TcpClientSyncAccessor(const AsyncCtx &ctx,
@@ -28,12 +42,41 @@ namespace async_tcp {
 
         // Cross-core: execute via bridge to run in the networking context
         uint8_t result = 0;
-        auto payload = std::make_unique<StatusPayload>();
+        auto payload = std::make_unique<AccessorPayload>();
+        payload->op = AccessorPayload::STATUS;
         payload->result_ptr = &result;
+
         if (const auto res = execute(std::move(payload)); res != PICO_OK) {
             DEBUGCORE(
                 "[ERROR] TcpClientSyncAccessor::status() returned error %d.\n",
                 res);
+        }
+        return result;
+    }
+
+    int TcpClientSyncAccessor::connect(const AIPAddress &ip,
+                                       const uint16_t port) {
+        // Same-core: take the async context lock and call directly
+        if (!isCrossCore()) {
+            ctxLock();
+            const int result = m_io._ts_connect(ip, port);
+            ctxUnlock();
+            return result;
+        }
+
+        // Cross-core: execute via bridge to run in the networking context
+        int result = PICO_ERROR_GENERIC;
+        auto payload = std::make_unique<AccessorPayload>();
+        payload->op = AccessorPayload::CONNECT;
+        payload->ip_ptr = const_cast<AIPAddress*>(&ip);
+        payload->port = port;
+        payload->connect_result = &result;
+
+        if (const auto res = execute(std::move(payload)); res != PICO_OK) {
+            DEBUGCORE(
+                "[ERROR] TcpClientSyncAccessor::connect() returned error %d.\n",
+                res);
+            return static_cast<int>(res);
         }
         return result;
     }

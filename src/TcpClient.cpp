@@ -65,14 +65,9 @@ namespace async_tcp {
         return connect(host.c_str(), port);
     }
 
-    int TcpClient::connect(AIPAddress ip, const uint16_t port) {
-        // Require a sync accessor and enforce same-core execution via run_local
-        if (!m_sync_accessor) {
-            return PICO_ERROR_INVALID_STATE;
-        }
-        return static_cast<int>(m_sync_accessor->run_local([&]() {
-            return static_cast<uint32_t>(_ts_connect(ip, port));
-        }));
+    int TcpClient::connect(const AIPAddress& ip, const uint16_t port) {
+        assert(m_sync_accessor && "Require a sync accessor for thread-safe cross-core execution");
+        return m_sync_accessor->connect(ip, port);
     }
 
     int TcpClient::_ts_connect(AIPAddress ip, const uint16_t port) {
@@ -148,7 +143,7 @@ namespace async_tcp {
 
     size_t TcpClient::write(const uint8_t *buf, const size_t size) const {
         assert(_ctx && "TcpClient context must be valid");
-        assert(size > 0 && "Write size must be non-zero");
+        assert(size > 0 && "Write size must be non-zero"); // todo: this should be handled more gracefully
         assert(m_writer && "TcpWriter must be configured for async operations");
 
         // Atomically check if no write is in progress and set it to true if so

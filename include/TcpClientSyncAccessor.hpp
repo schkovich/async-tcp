@@ -4,19 +4,37 @@
 #include <cassert>
 
 #include "iprs_util.hpp"
+#include "WiFi.h"  // For IPAddress
 
 namespace async_tcp {
 
-    class TcpClient; ///< Forward declaration of TcpClient
+    // Forward declarations to break circular dependency
+    class TcpClient;
+    using AIPAddress = IPAddress;  // Local alias for IPAddress
 
     class TcpClientSyncAccessor final : public SyncBridge {
 
-            TcpClient &m_io; ///< TCP client for write operations
+        public:
+            // Payload for accessor operations
+            struct AccessorPayload final : SyncPayload {
+                    enum Operation {
+                        STATUS, ///< Get the TCP client status
+                        CONNECT, ///< Connect to remote host
+                    };
 
-            // Payload for status() call
-            struct StatusPayload final : SyncPayload {
-                    uint8_t *result_ptr = nullptr;
+                    Operation op;            ///< The operation to perform
+                    uint8_t *result_ptr = nullptr; ///< Pointer to store the result
+
+                    // Connect operation parameters
+                    AIPAddress *ip_ptr = nullptr; ///< IP address for connect
+                    uint16_t port = 0;            ///< Port for connect
+                    int *connect_result = nullptr; ///< Connect result storage
+
+                    AccessorPayload() : op(STATUS) {}
             };
+
+        private:
+            TcpClient &m_io; ///< TCP client for write operations
 
             // Called in the correct async context
             uint32_t onExecute(SyncPayloadPtr payload) override;
@@ -33,6 +51,9 @@ namespace async_tcp {
 
             // Blocking, thread-safe status() call
             uint8_t status();
+
+            // Blocking, thread-safe connect() call
+            int connect(const AIPAddress &ip, uint16_t port);
 
             // Generic same-core execution helper (prohibits cross-core)
             template <typename F> uint32_t run_local(F &&callMe) {

@@ -5,6 +5,10 @@
 #include "TcpClient.hpp"
 #include "debug_internal.h"
 
+// Next optional refinements (if you want to pursue them later):
+// Introduce a small struct Result<size_t> { int status; size_t value; } to avoid ambiguity.
+// Reserve a sentinel (e.g. SIZE_MAX) for “error” and keep current return type.
+// Adjust callers (e.g. TcpWriter watermark logic) to treat values above a sane maximum (like 256 KB) as error and ignore them.
 namespace async_tcp {
 
     uint32_t TcpClientSyncAccessor::onExecute(const SyncPayloadPtr payload) {
@@ -19,6 +23,12 @@ namespace async_tcp {
         case AccessorPayload::CONNECT:
             if (p->ip_ptr && p->connect_result) {
                 *p->connect_result = m_io._ts_connect(*p->ip_ptr, p->port);
+                return PICO_OK;
+            }
+            return PICO_ERROR_NO_DATA;
+        case AccessorPayload::AVAILABLE_FOR_WRITE:
+            if (p->available_for_write) {
+                *p->available_for_write = m_io._ts_availableForWrite();
                 return PICO_OK;
             }
             return PICO_ERROR_NO_DATA;
@@ -78,6 +88,31 @@ namespace async_tcp {
                 res);
             return static_cast<int>(res);
         }
+        return result;
+    }
+    size_t TcpClientSyncAccessor::availableForWrite() {
+        // Same-core: take the async context lock and call directly
+        if (!isCrossCore()) {
+            ctxLock();
+            const size_t result = m_io._ts_availableForWrite();
+            ctxUnlock();
+            return result;
+        }
+
+        size_t result = 0;
+        auto payload = std::make_unique<AccessorPayload>();
+        payload->op = AccessorPayload::AVAILABLE_FOR_WRITE;
+        payload->available_for_write = &result;
+
+        if (const auto res = execute(std::move(payload)); res != PICO_OK) {
+            DEBUGCORE(
+                "[ERROR] TcpClientSyncAccessor::availableForWrite() returned error %d.\n",
+                res);
+            // Return the error code (will wrap if negative since return type is size_t).
+            // TODO: Consider changing return type to signed / separate status out param.
+            return static_cast<size_t>(res);
+        }
+
         return result;
     }
 

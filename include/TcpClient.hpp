@@ -204,6 +204,7 @@ namespace async_tcp {
              */
             void writeChunk(const uint8_t* data, size_t size) const;
 
+            // REMOVED unsafe cross-core availableForWrite(). Use sync accessor (future) or internal _ts_ variant
             void stop() const {
                 if (const auto err = stop(0); err == false) {
                     DEBUGWIRE("[:i%d] :stop timeout\n", getClientId());
@@ -238,6 +239,7 @@ namespace async_tcp {
             }
 
             friend class TcpClientSyncAccessor;
+            friend class TcpWriter; // allow writer to sample _ts_availableForWrite()
 
             void
             keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC,
@@ -346,10 +348,13 @@ namespace async_tcp {
             void _onAckCallback(const tcp_pcb *tpcb, uint16_t len) const;
 
             void _onPollCallback() const;
+
+            [[nodiscard]] virtual size_t _availableForWrite() const;
         private:
             unsigned long _timeout;      // number of milliseconds to wait for the next char before aborting timed read
 
             virtual uint8_t _ts_status();
+            [[nodiscard]] virtual size_t _ts_availableForWrite() const;
             // Thread-context correct connect implementation (must be called under async-context lock on networking core)
             virtual int _ts_connect(AIPAddress ip, uint16_t port);
     };

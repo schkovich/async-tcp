@@ -202,6 +202,12 @@ namespace async_tcp {
         }
         return _ctx->state();
     }
+    size_t TcpClient::_ts_availableForWrite() const {
+        if (!_ctx) {
+            return 0;
+        }
+        return _ctx->availableForWrite();
+    }
 
     /**
      * Used in onConnected callback. Calling the function from the async context
@@ -398,4 +404,9 @@ namespace async_tcp {
             _poll_callback_bridge->run();
         } // else: no-op when no handler is registered
     }
+
+    size_t TcpClient::_availableForWrite() const {
+        return m_sync_accessor->availableForWrite();
+    }
+
 } // namespace AsyncTcp

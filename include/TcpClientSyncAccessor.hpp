@@ -20,15 +20,19 @@ namespace async_tcp {
                     enum Operation {
                         STATUS, ///< Get the TCP client status
                         CONNECT, ///< Connect to remote host
+                        AVAILABLE_FOR_WRITE ///< Get current tcp_sndbuf available bytes
                     };
 
                     Operation op;            ///< The operation to perform
-                    uint8_t *result_ptr = nullptr; ///< Pointer to store the result
+                    uint8_t *result_ptr = nullptr; ///< Pointer to store the result (STATUS)
 
                     // Connect operation parameters
                     AIPAddress *ip_ptr = nullptr; ///< IP address for connect
                     uint16_t port = 0;            ///< Port for connect
                     int *connect_result = nullptr; ///< Connect result storage
+
+                    // Available-for-write result pointer
+                    size_t *available_for_write = nullptr;
 
                     AccessorPayload() : op(STATUS) {}
             };
@@ -54,6 +58,9 @@ namespace async_tcp {
 
             // Blocking, thread-safe connect() call
             int connect(const AIPAddress &ip, uint16_t port);
+
+            // Blocking, thread-safe availableForWrite() call
+            size_t availableForWrite();
 
             // Generic same-core execution helper (prohibits cross-core)
             template <typename F> uint32_t run_local(F &&callMe) {

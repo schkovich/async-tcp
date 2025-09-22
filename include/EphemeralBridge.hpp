@@ -22,13 +22,22 @@ namespace async_tcp {
 
             void initialiseBridge() override;
 
-            void takeOwnership(std::unique_ptr<EphemeralBridge> self);
-
             void run(uint32_t run_in);
 
         protected:
 
+            void takeOwnership(std::unique_ptr<EphemeralBridge> self);
+
             std::unique_ptr<EphemeralBridge> releaseOwnership();
+
+            template<typename DerivedHandler>
+                static void runHandler(std::unique_ptr<DerivedHandler> handler) {
+                DerivedHandler* raw_ptr = handler.get();
+                raw_ptr->takeOwnership(std::move(handler));
+                handler.reset(); // Release unique_ptr to avoid double deletion
+                raw_ptr->initialiseBridge();
+                raw_ptr->run(0);
+            }
     };
 
 } // namespace async_tcp

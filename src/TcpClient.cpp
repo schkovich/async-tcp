@@ -20,11 +20,13 @@
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "TcpClient.hpp"
+#include "PerpetualBridge.hpp"
+#include "TcpClientSyncAccessor.hpp"
 #include <TcpClientContext.hpp>
-#include <utility> // @todo: clarify if needed
 
-#include "LwipEthernet.h"
-#include "lwip/tcp.h"
+#include <LwipEthernet.h>
+#include <lwip/tcp.h>
+#include <utility>
 
 namespace async_tcp {
 
@@ -43,9 +45,7 @@ namespace async_tcp {
         return defaultNoDelay;
     }
 
-    TcpClient::TcpClient() : _ctx(nullptr) {
-        _timeout = 5000;
-    }
+    TcpClient::TcpClient() : _ctx(nullptr) { _timeout = 5000; }
 
     TcpClient::~TcpClient() {
         delete _ctx;
@@ -53,9 +53,8 @@ namespace async_tcp {
     }
 
     int TcpClient::connect(const char *host, const uint16_t port) {
-        if (AIPAddress remote_addr; hostByName(
-                host, remote_addr,
-                static_cast<int>(_timeout))) {
+        if (AIPAddress remote_addr;
+            hostByName(host, remote_addr, static_cast<int>(_timeout))) {
             return connect(remote_addr, port);
         }
         return PICO_ERROR_TIMEOUT;
@@ -65,8 +64,9 @@ namespace async_tcp {
         return connect(host.c_str(), port);
     }
 
-    int TcpClient::connect(const AIPAddress& ip, const uint16_t port) {
-        assert(m_sync_accessor && "Require a sync accessor for thread-safe cross-core execution");
+    int TcpClient::connect(const AIPAddress &ip, const uint16_t port) {
+        assert(m_sync_accessor &&
+               "Require a sync accessor for thread-safe cross-core execution");
         return m_sync_accessor->connect(ip, port);
     }
 
@@ -94,13 +94,13 @@ namespace async_tcp {
         _ctx->setOnErrorCallback([this](auto &&PH1) {
             _onErrorCallback(std::forward<decltype(PH1)>(PH1));
         });
-        _ctx->setOnAckCallback([this](auto &&PH1, auto &&PH2) {
-            _onAckCallback(std::forward<decltype(PH1)>(PH1),
-                           std::forward<decltype(PH2)>(PH2));
-        });
         _ctx->setOnFinCallback([this] { _onFinCallback(); });
         _ctx->setOnReceivedCallback([this] { _onReceiveCallback(); });
         _ctx->setOnPollCallback([this] { _onPollCallback(); });
+        _ctx->setOnAckCallback(
+            [this](const tcp_pcb *cb_pcb, const uint16_t len) {
+                _onAckCallback(cb_pcb, len);
+            });
 
         if (const auto res = _ctx->connect(ip, port); res != ERR_OK) {
             DEBUGWIRE("[TcpClient][%d] Client did not menage to connect.\n",
@@ -115,11 +115,6 @@ namespace async_tcp {
         return PICO_OK;
     }
 
-    /**
-     * Used in onConnected callback. Calling the function from the async context
-     * is thread safe.
-     * @return void
-     */
     void TcpClient::setNoDelay(const bool no_delay) const {
         if (!_ctx) {
             return;
@@ -139,20 +134,28 @@ namespace async_tcp {
         return _ctx->getNoDelay();
     }
 
-    size_t TcpClient::write(const uint8_t b) const { return write(&b, 1); }
+    void TcpClient::write(const uint8_t b) const { write(&b, 1); }
 
-    size_t TcpClient::write(const uint8_t *buf, const size_t size) const {
-        assert(_ctx && "TcpClient context must be valid");
-        assert(size > 0 && "Write size must be non-zero"); // todo: this should be handled more gracefully
-        assert(m_writer && "TcpWriter must be configured for async operations");
+    void TcpClient::write(const uint8_t *buf, const std::size_t size) const {
+        assert(buf && "Data pointer must be valid");
+        assert(size > 0 && "Write size must be non-zero");
 
-        // Atomically check if no write is in progress and set it to true if so
-        if (bool expected = false; !m_writer->tryStartWrite(expected)) {
-            DEBUGWIRE("[TcpClient][%d] RESOURCE_IN_USE\n", getClientId());
-            return PICO_ERROR_RESOURCE_IN_USE;
+        // Check if context is valid
+        if (!_ctx) {
+            DEBUGWIRE("[TcpClient][%d] No active connection\n", getClientId());
+            return;
         }
-        m_writer->write(buf, size);
-        return PICO_OK;
+
+        // Get the TcpWriter from context (must exist if context exists)
+        const auto tx = _ctx->getTxWriter();
+
+        assert(m_write_callback &&
+               "Write callback must be configured for write operations");
+        m_write_callback(tx, buf, size);
+    }
+
+    void TcpClient::setWriteCallback(WriteCallback callback) {
+        m_write_callback = std::move(callback);
     }
 
     void TcpClient::writeChunk(const uint8_t *data, const size_t size) const {
@@ -192,21 +195,13 @@ namespace async_tcp {
      * This function is thread safe.
      * @return uint8_t
      */
-    uint8_t TcpClient::status() {
-        return m_sync_accessor->status();
-    }
+    uint8_t TcpClient::status() { return m_sync_accessor->status(); }
 
     uint8_t TcpClient::_ts_status() {
         if (!_ctx) {
             return CLOSED;
         }
         return _ctx->state();
-    }
-    size_t TcpClient::_ts_availableForWrite() const {
-        if (!_ctx) {
-            return 0;
-        }
-        return _ctx->availableForWrite();
     }
 
     /**
@@ -311,9 +306,7 @@ namespace async_tcp {
         _received_callback_bridge = std::move(bridge);
     }
 
-    void
-    TcpClient::setOnConnectedCallback(
-        PerpetualBridgePtr bridge) {
+    void TcpClient::setOnConnectedCallback(PerpetualBridgePtr bridge) {
         _connected_callback_bridge = std::move(bridge);
     }
 
@@ -324,52 +317,72 @@ namespace async_tcp {
     void TcpClient::_onConnectCallback() const {
         const AIPAddress remote_ip = remoteIP();
         (void)remote_ip;
-        DEBUGWIRE("[TcpClient][%d] TcpClient::_onConnectCallback(): Connected to %s.\n", getClientId(),
-                  remote_ip.toString().c_str());
+        DEBUGWIRE("[TcpClient][%d] TcpClient::_onConnectCallback(): Connected "
+                  "to %s.\n",
+                  getClientId(), remote_ip.toString().c_str());
         if (_connected_callback_bridge) {
             _connected_callback_bridge->run();
         } else {
-            DEBUGWIRE("[TcpClient][%d] TcpClient::_onConnectCallback: No event handler\n", getClientId());
+            DEBUGWIRE("[TcpClient][%d] TcpClient::_onConnectCallback: No event "
+                      "handler\n",
+                      getClientId());
         }
     }
 
     void TcpClient::_onFinCallback() const {
-        DEBUGWIRE("[TcpClient][%d] TcpClient::_onFinCallback(): FIN received.\n", getClientId());
-        if (m_writer) {
-            m_writer->onError(ERR_CLSD); // Always notify the Writer class on close.
+        DEBUGWIRE(
+            "[TcpClient][%d] TcpClient::_onFinCallback(): FIN received.\n",
+            getClientId());
+
+        // Get TcpWriter from context and notify about connection closure
+        if (_ctx) {
+            // ReSharper disable once CppDFAConstantConditions
+            if (const auto tx = _ctx->getTxWriter()) {
+                // ReSharper disable once CppDFAUnreachableCode
+                tx->onError(
+                    ERR_CLSD); // Always notify the Writer class on close.
+            }
         }
+
         if (_fin_callback_bridge) {
+            // ReSharper disable once CppDFANullDereference
             _fin_callback_bridge->workload(_ctx->getRxBuffer());
             _fin_callback_bridge->run();
         } else {
-            DEBUGWIRE("[TcpClient][%d] TcpClient::_onFinCallback: No event handler\n", getClientId());
+            DEBUGWIRE(
+                "[TcpClient][%d] TcpClient::_onFinCallback: No event handler\n",
+                getClientId());
         }
     }
 
     void TcpClient::_onErrorCallback(const err_t err) const {
-        DEBUGWIRE("[TcpClient][%d] The ctx failed with the error code: %d", getClientId(), err);
+        DEBUGWIRE("[TcpClient][%d] The ctx failed with the error code: %d",
+                  getClientId(), err);
 
         // Dispatch error handling via PerpetualBridge if provided
         if (_error_callback_bridge) {
-            // Pass error code to the handler via workload() using heap allocation
+            // Pass error code to the handler via workload() using heap
+            // allocation
             auto *err_ptr = new err_t(err);
             _error_callback_bridge->workload(err_ptr);
-             _error_callback_bridge->run();
-         }
-     }
+            _error_callback_bridge->run();
+        }
+    }
 
     void TcpClient::_onReceiveCallback() const {
         if (_received_callback_bridge) {
             _received_callback_bridge->workload(_ctx->getRxBuffer());
             _received_callback_bridge->run();
         } else {
-            DEBUGWIRE("[TcpClient][%d] TcpClient::_onReceiveCallback: No event handler\n", getClientId());
+            DEBUGWIRE("[TcpClient][%d] TcpClient::_onReceiveCallback: No event "
+                      "handler\n",
+                      getClientId());
         }
     }
 
     void TcpClient::_onAckCallback(const struct tcp_pcb *tpcb,
                                    const uint16_t len) const {
-        (void)tpcb;  // PCB parameter not needed
+        (void)tpcb; // PCB parameter not needed
 
         // Dispatch ACK handling bridge (if any) with len payload
         if (_ack_callback_bridge) {
@@ -377,10 +390,6 @@ namespace async_tcp {
             _ack_callback_bridge->workload(len_ptr);
             _ack_callback_bridge->run();
         }
-    }
-
-    void TcpClient::setWriter(TcpWriterPtr writer) {
-        m_writer = std::move(writer);
     }
 
     void TcpClient::setOnErrorCallback(PerpetualBridgePtr bridge) {
@@ -396,6 +405,8 @@ namespace async_tcp {
     }
 
     void TcpClient::setSyncAccessor(TcpClientSyncAccessorPtr accessor) {
+        assert(!m_sync_accessor &&
+               "SyncAccessor should be set only once, before connect()");
         m_sync_accessor = std::move(accessor);
     }
 
@@ -405,8 +416,4 @@ namespace async_tcp {
         } // else: no-op when no handler is registered
     }
 
-    size_t TcpClient::_availableForWrite() const {
-        return m_sync_accessor->availableForWrite();
-    }
-
-} // namespace AsyncTcp
+} // namespace async_tcp

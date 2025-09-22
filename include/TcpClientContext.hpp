@@ -22,6 +22,7 @@
 #pragma once
 
 #include "IoRxBuffer.hpp"
+#include "TcpWriter.hpp"
 
 #include <Arduino.h>
 #include <cassert>
@@ -32,7 +33,6 @@
 #include <memory>
 
 namespace async_tcp {
-    class PerpetualBridge;
 
 #ifndef TCP_MSS
 #define TCP_MSS 1460 // lwip1.4
@@ -47,8 +47,6 @@ namespace async_tcp {
 
     class TcpClientContext;
 
-    class TcpClient;
-
     typedef void (*discard_cb_t)(void *, TcpClientContext *);
 
     using receive_cb_t = std::function<void(std::unique_ptr<int>)>;
@@ -60,19 +58,13 @@ namespace async_tcp {
             explicit TcpClientContext(tcp_pcb *pcb)
                 : _pcb(pcb) {
                 tcp_setprio(_pcb, TCP_PRIO_MIN);
-                // Set tcp_arg to point to this TcpClientContext instance
                 tcp_arg(_pcb, this);
                 tcp_recv(_pcb, lwip_receive_callback);
-                tcp_sent(_pcb, &_s_acked);
+                tcp_sent(_pcb, lwip_sent_cb);
                 tcp_err(_pcb, &_s_error);
                 tcp_poll(_pcb, reinterpret_cast<tcp_poll_fn>(&_s_poll), 1);
-
-                // Initialize IoRxBuffer
                 initRxBuffer();
-            }
-
-            [[maybe_unused]] [[nodiscard]] tcp_pcb *getPCB() const {
-                return _pcb;
+                initTxWriter(pcb);
             }
 
             err_t abort() {
@@ -117,6 +109,8 @@ namespace async_tcp {
             ~TcpClientContext() {
                 // Clean up IoRxBuffer when context is destroyed
                 cleanupRxBuffer();
+                // Clean up IoTxWriter when context is destroyed
+                cleanupTxWriter();
             }
 
             err_t connect(ip_addr_t *addr, const uint16_t port) const {
@@ -151,10 +145,12 @@ namespace async_tcp {
                 return ERR_OK;
             }
 
-            [[nodiscard]] size_t availableForWrite() const {
-                return _pcb ? tcp_sndbuf(_pcb) : 0;
-            }
-
+            /**
+             * Sets Nagle's algorithm. When set to true, disables Nagle's
+             * algorithm (no delay). When set to false, enables Nagle's
+             * Calling the function from the async context is thread safe.
+             * @return void
+             */
             void setNoDelay(const bool no_delay) const {
                 if (!_pcb) {
                     return;
@@ -351,7 +347,7 @@ namespace async_tcp {
                 if (!_rx) {
                     _rx = new IoRxBuffer(nullptr);
                     _rx->setOnFinCallback([this] { _finCb(); });
-                        _rx->setOnReceivedCallback(
+                    _rx->setOnReceivedCallback(
                                 [this] { _receiveCb(); });
                 }
             }
@@ -366,17 +362,32 @@ namespace async_tcp {
             }
 
             /**
+             * @brief Initialize the IoTxWriter for this context
+             * @param pcb
+             */
+            void initTxWriter(tcp_pcb *pcb) {
+                _tx = new TcpWriter(pcb);
+                _tx->setOnAckCallback(_ackCb);
+            }
+
+            /**
+             * @brief Clean up the IoTxWriter
+             */
+            void cleanupTxWriter() {
+                delete _tx;
+                _tx = nullptr;
+            }
+
+            /**
              * @brief Get the client ID (for internal logging)
              * @return uint8_t client id
              */
             [[nodiscard]] uint8_t getClientId() const { return m_client_id; }
 
+            [[nodiscard]] TcpWriter *getTxWriter() const { return _tx; }
+
+
         protected:
-            // store pending write buffers for async scheduling
-            const char *_datasource = nullptr;
-            size_t _datalen = 0;
-            // timestamp when the first write chunk was scheduled
-            uint32_t _write_start_time = 0;
 
             /**
              * @brief Checks if the operation has timed out based on a given
@@ -458,16 +469,6 @@ namespace async_tcp {
                 return flags;
             }
 
-            err_t _acked(tcp_pcb *pcb, const uint16_t len) const {
-                // Notify the integration layer via a callback.
-                // The integration layer (e5::TcpAckHandler) will handle the
-                // chunking policy.
-                if (_ackCb) {
-                    _ackCb(pcb, len);
-                }
-                return ERR_OK;
-            }
-
             void _error(const err_t err) {
                 DEBUGWIRE("[:i%d] :er %d 0x%%\n", getClientId(),
                           static_cast<int>(err));
@@ -528,16 +529,6 @@ namespace async_tcp {
                 return ERR_OK;
             }
 
-            static err_t _s_acked(void *arg, tcp_pcb *tpcb, // NOLINT
-                                  const uint16_t len) {
-                if (arg) {
-                    const auto *ctx = static_cast<TcpClientContext *>(arg);
-                    return ctx->_acked(tpcb, len);
-                }
-
-                return ERR_OK;
-            }
-
             static err_t _s_connected(void *arg, const struct tcp_pcb *pcb,
                                       const err_t err) {
                 if (arg) {
@@ -550,6 +541,7 @@ namespace async_tcp {
         private:
             tcp_pcb *_pcb;
             IoRxBuffer *_rx = nullptr;  // Move IoRxBuffer ownership here
+            TcpWriter *_tx = nullptr;  // Tx writer (set by higher layer)
 
             uint32_t _timeout_ms = 5000;
 

@@ -42,7 +42,7 @@ namespace async_tcp {
             if (p) {
                 pbuf_free(p);
             }
-            return err;
+            return err; // todo: notify app? return ERR_ABRT?
         }
 
         // The remote peer sends a TCP segment with the FIN flag set to close.

@@ -26,12 +26,6 @@ namespace async_tcp {
                 return PICO_OK;
             }
             return PICO_ERROR_NO_DATA;
-        case AccessorPayload::AVAILABLE_FOR_WRITE:
-            if (p->available_for_write) {
-                *p->available_for_write = m_io._ts_availableForWrite();
-                return PICO_OK;
-            }
-            return PICO_ERROR_NO_DATA;
         default:
             return PICO_ERROR_INVALID_ARG;
         }
@@ -88,31 +82,6 @@ namespace async_tcp {
                 res);
             return static_cast<int>(res);
         }
-        return result;
-    }
-    size_t TcpClientSyncAccessor::availableForWrite() {
-        // Same-core: take the async context lock and call directly
-        if (!isCrossCore()) {
-            ctxLock();
-            const size_t result = m_io._ts_availableForWrite();
-            ctxUnlock();
-            return result;
-        }
-
-        size_t result = 0;
-        auto payload = std::make_unique<AccessorPayload>();
-        payload->op = AccessorPayload::AVAILABLE_FOR_WRITE;
-        payload->available_for_write = &result;
-
-        if (const auto res = execute(std::move(payload)); res != PICO_OK) {
-            DEBUGCORE(
-                "[ERROR] TcpClientSyncAccessor::availableForWrite() returned error %d.\n",
-                res);
-            // Return the error code (will wrap if negative since return type is size_t).
-            // TODO: Consider changing return type to signed / separate status out param.
-            return static_cast<size_t>(res);
-        }
-
         return result;
     }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SyncBridge.hpp"
+
 #include <cassert>
 
 #include "iprs_util.hpp"
@@ -8,7 +9,6 @@
 
 namespace async_tcp {
 
-    // Forward declarations to break circular dependency
     class TcpClient;
     using AIPAddress = IPAddress;  // Local alias for IPAddress
 
@@ -19,8 +19,7 @@ namespace async_tcp {
             struct AccessorPayload final : SyncPayload {
                     enum Operation {
                         STATUS, ///< Get the TCP client status
-                        CONNECT, ///< Connect to remote host
-                        AVAILABLE_FOR_WRITE ///< Get current tcp_sndbuf available bytes
+                        CONNECT ///< Connect to remote host
                     };
 
                     Operation op;            ///< The operation to perform
@@ -31,14 +30,11 @@ namespace async_tcp {
                     uint16_t port = 0;            ///< Port for connect
                     int *connect_result = nullptr; ///< Connect result storage
 
-                    // Available-for-write result pointer
-                    size_t *available_for_write = nullptr;
-
                     AccessorPayload() : op(STATUS) {}
             };
 
         private:
-            TcpClient &m_io; ///< TCP client for write operations
+            TcpClient &m_io; ///< TCP client reference
 
             // Called in the correct async context
             uint32_t onExecute(SyncPayloadPtr payload) override;
@@ -58,9 +54,6 @@ namespace async_tcp {
 
             // Blocking, thread-safe connect() call
             int connect(const AIPAddress &ip, uint16_t port);
-
-            // Blocking, thread-safe availableForWrite() call
-            size_t availableForWrite();
 
             // Generic same-core execution helper (prohibits cross-core)
             template <typename F> uint32_t run_local(F &&callMe) {

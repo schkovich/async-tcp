@@ -19,14 +19,20 @@
 #pragma once
 
 #include "ContextManager.hpp"
+
 #include <Arduino.h>
-#include <atomic>
+#include <cstring>
+#include <functional>
 #include <lwip/err.h>
+#include <lwip/tcp.h>
 #include <memory>
 
 namespace async_tcp {
 
-    class TcpClient; ///< Forward declaration of TcpClient class
+    class TcpClient;
+
+    extern "C" err_t lwip_sent_cb(void *arg, tcp_pcb *tpcb,
+                                  u16_t len); // pure C ACK bridge
 
     /**
      * @class TcpWriter
@@ -39,9 +45,14 @@ namespace async_tcp {
      * fit in a single TCP send buffer.
      */
     class TcpWriter final {
+
+            using AckCallback = std::function<void(tcp_pcb *, std::size_t)>;
+
+            tcp_pcb *m_pcb = nullptr; ///< Pointer to the TCP PCB
+            friend err_t lwip_sent_cb(void *arg, tcp_pcb *tpcb, u16_t len);
             static constexpr uint64_t STALL_TIMEOUT_US =
                 2000000; ///< Stall timeout: no progress (queue or ACK) for this
-                         ///< many microseconds
+                         ///< many microseconds.
             // Completion policy: Acked (default) or Enqueued (complete when
             // fully queued regardless of ACKs)
             enum class CompletionMode : uint8_t { Acked = 0, Enqueued = 1 };
@@ -57,61 +68,57 @@ namespace async_tcp {
             static constexpr size_t MAX_FRAGMENTS_PER_CALL =
                 1; // increase later if beneficial
 
-            const AsyncCtx &m_ctx; ///< Context manager for worker execution
-            TcpClient &m_io;       ///< TCP client for write operations
-
             // State for managing multi-chunk writes
             std::unique_ptr<uint8_t[]>
-                m_data{};        ///< Original binary data being written
-            size_t m_acked;      ///< Bytes successfully ACKed so far
-            size_t m_queued;     ///< Bytes queued for sending (>= m_acked);
-                                 ///< instrumentation only for now
-            size_t m_total_size; ///< Total size of complete write operation
-            std::atomic<bool>
-                m_write_in_progress; ///< Thread-safe flag to prevent concurrent write operations
-            size_t m_last_free_estimate =
-                0; ///< Cached tcp_sndbuf snapshot (updated only inside async
-                   ///< context) writes
-            absolute_time_t
-                m_write_start_time; ///< Timestamp when write operation started
+                m_data{};            ///< Original binary data being written
+            std::size_t m_acked{0};  ///< Bytes successfully ACKed so far
+            std::size_t m_queued{0}; ///< Bytes queued for sending (>= m_acked);
+                                     ///< instrumentation only for now
+            std::size_t m_total_size{
+                0}; ///< Total size of complete write operation
+            absolute_time_t m_write_start_time{
+                nil_time}; ///< Timestamp when write operation started
             absolute_time_t m_last_progress_time =
                 nil_time; ///< Last time we made progress (queued or ACKed
                           ///< bytes)
             CompletionMode m_mode =
                 CompletionMode::Acked; ///< Current completion policy
-            /**
-             * @brief Send the next chunk of data
-             * Internal method to handle chunked transmission.
-             */
-            void sendNextChunk(); // Attempts to send remaining bytes in one
-                                  // chunk (mutates queued counter)
+
+            AckCallback m_ack_cb; // optional external ACK observer
 
             /**
-             * @brief Complete the write operation and cleanup state
+             * @brief Determine the size of the next chunk to send. Uses the
+             * smaller of remaining data and available send buffer space.
+             * @param remaining Remaining bytes to send
+             * @param send_buffer_free Current free space in the TCP send buffer
+             * @return Size of the next chunk to send
              */
-            void completeWrite();
-            [[nodiscard]] size_t
-            totalCapacityEstimate() const; // cached_free + in-flight (no direct
-                                           // pcb access outside async ctx)
-            [[nodiscard]] size_t
-            dynamicHighWatermarkBytes() const; // derived from cached capacity
-            [[nodiscard]] size_t
-            dynamicLowWatermarkBytes() const; // derived from cached capacity
-            // TODO(next incremental step): add m_queued counter and dual
-            // completion policy
-            size_t remainingUnqueued() const {
-                return (m_total_size > m_queued) ? (m_total_size - m_queued)
-                                                 : 0;
+            [[nodiscard]] std::size_t
+            getChunkSize(const std::size_t remaining,
+                         const std::size_t send_buffer_free) const {
+                return std::min(std::min(remaining, send_buffer_free),
+                                static_cast<std::size_t>(TCP_MSS));
             }
+
+            /**
+             * @brief Get pointer to the data for the next chunk to send.
+             * @param size Current offset into the data buffer
+             * @return Pointer to the data for the next chunk
+             */
+            [[nodiscard]]
+            const unsigned char *getChunkData(const std::size_t size) {
+                return m_data.get() + size;
+            }
+
+            [[nodiscard]] std::size_t availableForWrite() const;
+
 
         public:
             /**
              * @brief Constructor for TcpWriter
-             * @param ctx Reference to Context manager for scheduling write
-             * operations
-             * @param io Reference to TcpClient for actual I/O operations
+             * @param pcb Reference to PCB for scheduling write operations
              */
-            TcpWriter(const AsyncCtx &ctx, TcpClient &io);
+            explicit TcpWriter(tcp_pcb *pcb);
 
             /**
              * @brief Destructor
@@ -119,79 +126,38 @@ namespace async_tcp {
             ~TcpWriter() = default;
 
             /**
-             * @brief Start an asynchronous write operation
-             * @param data Pointer to binary data to write
-             * @param size Size of the data to write
+             * @brief Write data directly to TCP without buffer management
+             * @param data Pointer to data buffer (owned by caller)
+             * @param size Size of data to write
+             * @return Number of bytes successfully queued
              */
-            void write(const uint8_t *data, size_t size);
+            std::size_t writeData(const uint8_t *data, std::size_t size);
 
-            void setCompletionMode(CompletionMode mode) { m_mode = mode; }
-            [[nodiscard]] CompletionMode getCompletionMode() const {
-                return m_mode;
-            }
-            // Convenience wrappers
-            void enableEnqueueComplete() { m_mode = CompletionMode::Enqueued; }
-            void enableAckComplete() { m_mode = CompletionMode::Acked; }
-            [[nodiscard]] bool isEnqueueCompleteMode() const {
-                return m_mode == CompletionMode::Enqueued;
-            }
-            [[nodiscard]] bool isAckCompleteMode() const {
-                return m_mode == CompletionMode::Acked;
+            /**
+             * @brief Get optimal chunk size for current send buffer state
+             * @param data_size Size of data wanting to send
+             * @return Optimal chunk size respecting TCP_MSS and send buffer
+             */
+            [[nodiscard]] std::size_t
+            getOptimalChunkSize(const std::size_t data_size) const {
+                const auto free_buffer = availableForWrite();
+                return std::min(std::min(data_size, free_buffer),
+                                static_cast<std::size_t>(TCP_MSS));
             }
 
             /**
-             * @brief Check if a write operation is in progress
-             * @return true if write is in progress, false otherwise
+             * @brief Check if send buffer has space for writing
+             * @return true if send buffer has space, false otherwise
              */
-            [[nodiscard]] bool isWriteInProgress() const {
-                return m_write_in_progress.load();
+            [[nodiscard]] bool canWriteNow() const {
+                return availableForWrite() > 0;
             }
 
-            /**
-             * @brief Atomically try to start a write operation
-             * Uses compare_exchange_strong to atomically check if no write is
-             * in progress and set it to true if so, eliminating race
-             * conditions.
-             * @param expected Reference to expected value (should be false)
-             * @return true if write was successfully started, false if already
-             * in progress.
-             */
-            bool tryStartWrite(bool &expected) {
-                return m_write_in_progress.compare_exchange_strong(expected,
-                                                                   true);
-            }
+            void onAckCallback(tcp_pcb *pcb, uint16_t len);
 
-            /**
-             * @brief Handle ACK notification to continue multi-chunk writes
-             * Called by TcpClient when ACK is received from remote peer.
-             */
-            void onAckReceived(uint16_t ack_len);
+            void setOnAckCallback(const AckCallback &cb) { m_ack_cb = cb; }
 
             void onError(err_t error);
-
-            /**
-             * @brief Check if the current write operation has timed out
-             * @return true if write has timed out, false otherwise
-             */
-            [[nodiscard]] bool hasTimedOut() const; // Stall timeout check
-
-            /**
-             * @brief Handle write timeout — called when timeout is detected
-             * Cleans up the write operation and notifies about a timeout.
-             */
-            void onWriteTimeout();
-
-            // Accessors (diagnostics / future policy work)
-            [[nodiscard]] size_t ackedBytes() const { return m_acked; }
-            [[nodiscard]] size_t queuedBytes() const { return m_queued; }
-            [[nodiscard]] size_t totalBytes() const { return m_total_size; }
-            [[nodiscard]] size_t inFlightBytes() const {
-                return (m_queued >= m_acked) ? (m_queued - m_acked) : 0;
-            }
-            [[nodiscard]] bool
-            shouldBackpressure() const; // Uses cached free estimate
-            [[nodiscard]] bool
-            canReleaseBackpressure() const; // Uses cached free estimate
     };
 
 } // namespace async_tcp

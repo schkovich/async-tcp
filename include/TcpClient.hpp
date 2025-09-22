@@ -4,7 +4,7 @@
  * Connect.
  *
  * This library provides asynchronous TCP client functionalities with support
- * for the ESP32 co-processor. The library is a refactored version of the
+ * for the ESP32 coprocessor. The library is a refactored version of the
  * WiFiClient library.
  *
  * @modified Ivan Grokhotkov
@@ -35,12 +35,6 @@
 
 #include "WiFi.h"
 
-#include "IoRxBuffer.hpp"
-#include "PerpetualBridge.hpp"
-#include "TcpWriter.hpp"
-#include "TcpClientSyncAccessor.hpp"
-#include <memory>
-
 namespace async_tcp {
 
 #ifndef TCP_MSS
@@ -55,8 +49,9 @@ namespace async_tcp {
 #define TCP_DEFAULT_KEEP_ALIVE_COUNT 9         // fault after 9 failures
 
     class TcpClientContext;
-
-    class WiFiServer; // Is it necessary and used?
+    class TcpClientSyncAccessor;
+    class TcpWriter;
+    class PerpetualBridge;
 
     using namespace std::placeholders;
 
@@ -65,8 +60,8 @@ namespace async_tcp {
     //  Local alias for arduino::String
     using AString = String;
 
-    using TcpWriterPtr = std::unique_ptr<TcpWriter>;
     using TcpClientSyncAccessorPtr = std::unique_ptr<TcpClientSyncAccessor>;
+    using PerpetualBridgePtr = std::unique_ptr<PerpetualBridge>;
 
     /**
      * @class TcpClient
@@ -78,6 +73,9 @@ namespace async_tcp {
     class TcpClient {
 
         public:
+            // Define a callback type for write operations
+            using WriteCallback = std::function<void(TcpWriter*, const uint8_t*, std::size_t)>;
+
             /**
              * @brief Default constructor for the AsyncTcpClient class.
              */
@@ -188,9 +186,9 @@ namespace async_tcp {
              */
             virtual int connect(const AString &host, uint16_t port);
 
-            [[nodiscard]] size_t write(uint8_t b) const;
+            void write(uint8_t b) const;
 
-            size_t write(const uint8_t *buf, size_t size) const;
+            void write(const uint8_t *buf, std::size_t size) const;
 
             /**
              * @brief Write a single chunk directly to TCP connection.
@@ -204,7 +202,6 @@ namespace async_tcp {
              */
             void writeChunk(const uint8_t* data, size_t size) const;
 
-            // REMOVED unsafe cross-core availableForWrite(). Use sync accessor (future) or internal _ts_ variant
             void stop() const {
                 if (const auto err = stop(0); err == false) {
                     DEBUGWIRE("[:i%d] :stop timeout\n", getClientId());
@@ -239,7 +236,6 @@ namespace async_tcp {
             }
 
             friend class TcpClientSyncAccessor;
-            friend class TcpWriter; // allow writer to sample _ts_availableForWrite()
 
             void
             keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEP_ALIVE_IDLE_SEC,
@@ -268,6 +264,12 @@ namespace async_tcp {
 
             [[maybe_unused]] [[nodiscard]] bool getNoDelay() const;
 
+            /**
+             * Sets Nagle's algorithm. When set to true, disables Nagle's
+             * algorithm (no delay). When set to false, enables Nagle's
+             * Calling the function from the async context is thread safe.
+             * @return void
+             */
             void setNoDelay(bool no_delay) const;
 
             void setOnReceivedCallback(PerpetualBridgePtr bridge);
@@ -276,17 +278,6 @@ namespace async_tcp {
             void setOnErrorCallback(PerpetualBridgePtr bridge);
             void setOnPollCallback(PerpetualBridgePtr bridge);
             void setOnAckCallback(PerpetualBridgePtr bridge);
-
-            /**
-             * @brief Set the TcpWriter for chunked write operations
-             *
-             * When a writer is set, the write() method will delegate to the writer
-             * for efficient chunking and flow control instead of using the basic
-             * synchronous write implementation. Takes ownership of the writer.
-             *
-             * @param writer Unique pointer to TcpWriter instance
-             */
-            void setWriter(TcpWriterPtr writer);
 
             /**
              * @brief Set the client ID for this TcpClient instance.
@@ -300,13 +291,15 @@ namespace async_tcp {
              */
             void setSyncAccessor(TcpClientSyncAccessorPtr accessor);
 
+            /**
+             * @brief Set the write callback for handling write operations
+             * @param callback Function to call when write operations are requested
+             */
+            void setWriteCallback(WriteCallback callback);
+
             // Method needed for the "jump" pattern in static callbacks
             [[nodiscard]] TcpClientContext *getContext() const {
                 return _ctx;
-            }
-
-            [[nodiscard]] TcpWriter *getWriter() const {
-                return m_writer.get();
             }
 
             [[nodiscard]] TcpClientSyncAccessor *getSyncAccessor() const {
@@ -320,19 +313,17 @@ namespace async_tcp {
             [[nodiscard]] uint8_t getClientId() const { return m_client_id; }
 
         protected:
-            PerpetualBridgePtr _received_callback_bridge;
-            PerpetualBridgePtr _connected_callback_bridge;
-            PerpetualBridgePtr _fin_callback_bridge;
-            PerpetualBridgePtr _error_callback_bridge;
-            PerpetualBridgePtr _poll_callback_bridge;
-            PerpetualBridgePtr _ack_callback_bridge;
+            PerpetualBridgePtr _received_callback_bridge{};
+            PerpetualBridgePtr _connected_callback_bridge{};
+            PerpetualBridgePtr _fin_callback_bridge{};
+            PerpetualBridgePtr _error_callback_bridge{};
+            PerpetualBridgePtr _poll_callback_bridge{};
+            PerpetualBridgePtr _ack_callback_bridge{};
 
             TcpClientContext *_ctx;
 
             static uint16_t _localPort;
-
-            TcpWriterPtr m_writer{};  ///< Writer for chunked operations
-            TcpClientSyncAccessorPtr m_sync_accessor; ///< Sync accessor for thread-safe operations
+            TcpClientSyncAccessorPtr m_sync_accessor {}; ///< Sync accessor for thread-safe operations
 
             // --- Client ID for logging and traceability ---
             uint8_t m_client_id = 0; // Smallest integer type for client id
@@ -349,13 +340,13 @@ namespace async_tcp {
 
             void _onPollCallback() const;
 
-            [[nodiscard]] virtual size_t _availableForWrite() const;
         private:
             unsigned long _timeout;      // number of milliseconds to wait for the next char before aborting timed read
+            WriteCallback m_write_callback = {}; ///< Callback for handling write operations
 
             virtual uint8_t _ts_status();
-            [[nodiscard]] virtual size_t _ts_availableForWrite() const;
             // Thread-context correct connect implementation (must be called under async-context lock on networking core)
             virtual int _ts_connect(AIPAddress ip, uint16_t port);
+
     };
 } // namespace AsyncTcp

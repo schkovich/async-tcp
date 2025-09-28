@@ -3,7 +3,7 @@
  * @brief Implements asynchronous context management and worker scheduling for
  * the AsyncTCP library.
  *
- * This file defines the ContextManager class methods which manage the
+ * This file defines the ContextManager class methods, which manage the
  * asynchronous execution context, worker scheduling, thread-safe lock handling,
  * and synchronous execution across cores.
  *
@@ -23,9 +23,11 @@
  */
 
 #include "ContextManager.hpp"
+#include "../../PerpetualWorker.hpp"
+#include "../../EphemeralWorker.hpp"
 #include <Arduino.h>
 
-namespace async_tcp {
+namespace async_bridge {
 
     ContextManager::ContextManager() : m_context() {
         m_context_core = &m_context.core; // Set the core context reference
@@ -192,4 +194,4 @@ namespace async_tcp {
     void ContextManager::waitUntil(const absolute_time_t until) const {
         async_context_wait_until(m_context_core, until);
     }
-} // namespace async_tcp
+} // namespace async_bridge

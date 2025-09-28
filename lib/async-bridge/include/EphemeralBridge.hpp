@@ -1,43 +1,29 @@
+// SPDX-License-Identifier: MPL-2.0
 #pragma once
+
 #include "EventBridge.hpp"
 
-#include <Arduino.h>
 #include <memory>
 
-namespace async_tcp {
+namespace async_bridge {
 
-    class EphemeralBridge : public EventBridge {
+class EphemeralWorker; // forward
 
-            friend void
-            ephemeral_bridging_function(async_context_t *context,
-                                        async_work_on_timeout *worker);
-            EphemeralWorker m_ephemeral_worker;
-            std::unique_ptr<EphemeralBridge> m_self =
-                nullptr; /**< Self-reference for automatic cleanup */
+class EphemeralBridge : public EventBridge {
+public:
+    explicit EphemeralBridge(const IAsyncContext &ctx) : EventBridge(ctx) {}
 
-        public:
+    void initialiseBridge() override;
 
-            explicit EphemeralBridge(const AsyncCtx &ctx)
-                : EventBridge(ctx) {}
+    void run(uint32_t run_in_ms = 0);
 
-            void initialiseBridge() override;
+protected:
+    // Self ownership helper for ephemeral lifetime management
+    std::unique_ptr<EphemeralBridge> m_self = nullptr;
 
-            void run(uint32_t run_in);
+    void takeOwnership(std::unique_ptr<EphemeralBridge> self) { m_self = std::move(self); }
+    std::unique_ptr<EphemeralBridge> releaseOwnership() { return std::move(m_self); }
+};
 
-        protected:
+} // namespace async_bridge
 
-            void takeOwnership(std::unique_ptr<EphemeralBridge> self);
-
-            std::unique_ptr<EphemeralBridge> releaseOwnership();
-
-            template<typename DerivedHandler>
-                static void runHandler(std::unique_ptr<DerivedHandler> handler) {
-                DerivedHandler* raw_ptr = handler.get();
-                raw_ptr->takeOwnership(std::move(handler));
-                handler.reset(); // Release unique_ptr to avoid double deletion
-                raw_ptr->initialiseBridge();
-                raw_ptr->run(0);
-            }
-    };
-
-} // namespace async_tcp

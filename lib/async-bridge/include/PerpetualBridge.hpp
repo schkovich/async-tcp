@@ -1,33 +1,33 @@
+// SPDX-License-Identifier: MPL-2.0
 #pragma once
+
 #include "EventBridge.hpp"
 
 #include <memory>
 
-namespace async_tcp {
+namespace async_bridge {
 
-    class PerpetualBridge : public EventBridge {
-            friend void
-            perpetual_bridging_function(async_context_t *context,
-                                        async_when_pending_worker_t *worker);
+class PerpetualWorker; // forward-declared handle
 
-        public:
-            explicit PerpetualBridge(const AsyncCtx &ctx) : EventBridge(ctx) {}
+class PerpetualBridge : public EventBridge {
+public:
+    explicit PerpetualBridge(const IAsyncContext &ctx) : EventBridge(ctx) {}
 
-            ~PerpetualBridge() override {
-                getContext().removeWorker(m_perpetual_worker);
-            }
+    // Implementations should remove worker in the destructor via context
+    ~PerpetualBridge() override = default;
 
-            void initialiseBridge() override;
+    void initialiseBridge() override;
 
-            void run();
+    void run();
 
-            // RxBuffer
-            virtual void workload(void *data);
+    // Optional workload entry point for derived classes
+    virtual void workload(void *data) { (void)data; }
 
-        protected:
-            PerpetualWorker m_perpetual_worker = {};
-    };
+protected:
+    PerpetualWorker *m_perpetual_worker = nullptr;
+};
 
-    using PerpetualBridgePtr = std::unique_ptr<PerpetualBridge>;
+using PerpetualBridgePtr = std::unique_ptr<PerpetualBridge>;
 
-} // namespace async_tcp
+} // namespace async_bridge
+

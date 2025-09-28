@@ -24,12 +24,13 @@
 
 #pragma once
 
+#include "../../IAsyncContext.hpp"
+
 #include <pico/async_context_threadsafe_background.h>
 
-#include "EphemeralWorker.hpp"
-#include "PerpetualWorker.hpp"
-
-namespace async_tcp {
+namespace async_bridge {
+    class PerpetualWorker;
+    class EphemeralWorker;
 
     /**
      * @brief Function pointer type for asynchronous work handlers.
@@ -40,14 +41,14 @@ namespace async_tcp {
      * system.
      *
      * @note The void* parameter allows passing arbitrary data to the handler,
-     * and the uint32_t return value can be used to indicate success, failure,
+     * and the uint32_t return value can be used to indicate success, failure
      * or other status information.
      */
     typedef uint32_t (*HandlerFunction)(void *param);
 
     /**
      * @class ContextManager
-     * @brief Core component that manages execution contexts and ensures thread
+     * @brief Manages execution contexts and ensures thread
      * safety.
      *
      * The ContextManager provides a stable environment for executing code that
@@ -73,7 +74,7 @@ namespace async_tcp {
      * Thread safety is guaranteed by the underlying async_context
      * implementation.
      */
-    class ContextManager {
+    class ContextManager : public IAsyncContext {
 
             async_context_threadsafe_background_t m_context; /**< Thread-safe background context for asynchronous operations. */
             async_context_t *m_context_core = nullptr; /**< Reference to the core asynchronous context. */
@@ -104,7 +105,7 @@ namespace async_tcp {
              * This cleanup is crucial for preventing resource leaks in
              * long-running applications.
              */
-            ~ContextManager();
+            ~ContextManager() override;
 
             /**
              * @brief Adds a persistent worker to the context for ongoing task
@@ -115,9 +116,9 @@ namespace async_tcp {
              * setWorkPending().
              *
              * @param worker Reference to the PerpetualWorker instance to be
-             * added to the context
+             * added to the context.
              * @return true if the worker was successfully added, false if the
-             * context is invalid or addition failed
+             * context is invalid or addition failed.
              */
             bool addWorker(PerpetualWorker& worker) const;
 
@@ -238,7 +239,7 @@ namespace async_tcp {
              *
              * @return The core number (typically 0 or 1 on RP2040 platforms)
              */
-            [[nodiscard]] uint8_t getCore() const;
+            [[nodiscard]] uint8_t getCore() const override;
 
             /**
              * @brief Verifies that the caller holds the context lock.
@@ -246,7 +247,7 @@ namespace async_tcp {
              * Useful for debugging and validation in code that requires the
              * lock to be held.
              */
-            void checkLock() const;
+            void checkLock() const override;
 
             /**
              * @brief Blocks the calling thread until the specified time is
@@ -259,14 +260,5 @@ namespace async_tcp {
              */
             void waitUntil(absolute_time_t until) const;
     };
-
-    /**
-     * @typedef ContextManagerPtr
-     * @brief Smart pointer type for managing ContextManager instances.
-     *
-     * This unique_ptr ensures proper cleanup of the ContextManager when it goes
-     * out of scope.
-     */
-    using AsyncCtx = ContextManager;
 
 } // namespace async_tcp

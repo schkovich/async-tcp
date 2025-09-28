@@ -1,33 +1,31 @@
+// SPDX-License-Identifier: MPL-2.0
 #pragma once
 
-#include "ContextManager.hpp"
-
-namespace async_tcp {
-
-    extern "C" {
-    void perpetual_bridging_function(async_context_t *context,
-                                     async_when_pending_worker_t *worker);
-
-    void ephemeral_bridging_function(async_context_t *context,
-                                     async_work_on_timeout *worker);
-    }
+namespace async_bridge {
+    class IAsyncContext;
 
     class EventBridge {
+protected:
+    explicit EventBridge(const IAsyncContext &ctx) : m_ctx(ctx) {}
 
-            const AsyncCtx &m_ctx; /**< Reference to the context manager. */
+    virtual void onWork() = 0;
+    void doWork() { onWork(); }
 
-        protected:
-            explicit EventBridge(const AsyncCtx &ctx) : m_ctx(ctx) {}
+    [[nodiscard]] const IAsyncContext &getContext() const { return m_ctx; }
 
-            virtual void onWork() = 0;
-            void doWork() { onWork(); };
+public:
+    virtual ~EventBridge() = default;
 
-            [[nodiscard]] const AsyncCtx &getContext() const {
-                return m_ctx;
-            }
-        public:
-            virtual ~EventBridge() = default;
-            virtual void initialiseBridge() = 0;
-    };
+    /**
+     * Initialise any runtime structures required by the bridge. Implementations
+     * should register workers with the context here.
+     */
+    virtual void initialiseBridge() = 0;
 
-} // namespace async_tcp
+protected:
+    const IAsyncContext &m_ctx;
+};
+
+} // namespace async_bridge
+
+

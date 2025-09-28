@@ -75,6 +75,12 @@ namespace async_bridge {
             // payload setter is non-virtual and operates on the base-owned
             // worker
             void setPayload(void *data) noexcept { m_worker.user_data = data; }
+
+            // Provide access to the internal worker for platform APIs that
+            // expect a pointer to the worker struct (keeps compatibility with
+            // existing ContextManager usage).
+            WorkerT* getWorker() noexcept { return &m_worker; }
+            const WorkerT* getWorker() const noexcept { return &m_worker; }
     };
 
 } // namespace async_bridge

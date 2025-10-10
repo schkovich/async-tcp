@@ -31,7 +31,7 @@ namespace async_tcp {
         }
     }
 
-    TcpClientSyncAccessor::TcpClientSyncAccessor(const AsyncCtx &ctx,
+    TcpClientSyncAccessor::TcpClientSyncAccessor(IAsyncContext &ctx,
                                                  TcpClient &io)
         : SyncBridge(ctx), m_io(io) {}
 

@@ -35,6 +35,9 @@
 
 #include "WiFi.h"
 
+namespace async_bridge {
+    class PerpetualBridge;
+}
 namespace async_tcp {
 
 #ifndef TCP_MSS
@@ -51,9 +54,9 @@ namespace async_tcp {
     class TcpClientContext;
     class TcpClientSyncAccessor;
     class TcpWriter;
-    class PerpetualBridge;
 
     using namespace std::placeholders;
+    using namespace async_bridge;
 
     //  Local alias for arduino::IPAddress
     using AIPAddress = IPAddress;

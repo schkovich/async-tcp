@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/schema/library.json",
+  "name": "async-tcp",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "async-tcp=git@github.com:schkovich/async-tcp.git"
+  }
+}

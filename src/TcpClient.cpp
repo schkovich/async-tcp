@@ -20,7 +20,7 @@
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "TcpClient.hpp"
-#include "PerpetualBridge.hpp"
+#include "async_bridge/PerpetualBridge.hpp"
 #include "TcpClientSyncAccessor.hpp"
 #include <TcpClientContext.hpp>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SyncBridge.hpp"
+#include "async_bridge/SyncBridge.hpp"
 
 #include <cassert>
 
@@ -9,31 +9,11 @@
 
 namespace async_tcp {
 
+    using namespace async_bridge;
     class TcpClient;
     using AIPAddress = IPAddress;  // Local alias for IPAddress
 
     class TcpClientSyncAccessor final : public SyncBridge {
-
-        public:
-            // Payload for accessor operations
-            struct AccessorPayload final : SyncPayload {
-                    enum Operation {
-                        STATUS, ///< Get the TCP client status
-                        CONNECT ///< Connect to remote host
-                    };
-
-                    Operation op;            ///< The operation to perform
-                    uint8_t *result_ptr = nullptr; ///< Pointer to store the result (STATUS)
-
-                    // Connect operation parameters
-                    AIPAddress *ip_ptr = nullptr; ///< IP address for connect
-                    uint16_t port = 0;            ///< Port for connect
-                    int *connect_result = nullptr; ///< Connect result storage
-
-                    AccessorPayload() : op(STATUS) {}
-            };
-
-        private:
             TcpClient &m_io; ///< TCP client reference
 
             // Called in the correct async context
@@ -47,7 +27,25 @@ namespace async_tcp {
             }
 
         public:
-            TcpClientSyncAccessor(const AsyncCtx &ctx, TcpClient &io);
+            // Payload for accessor operations
+            struct AccessorPayload final : SyncPayload {
+                enum Operation {
+                    STATUS, ///< Get the TCP client status
+                    CONNECT ///< Connect to remote host
+                };
+
+                Operation op;            ///< The operation to perform
+                uint8_t *result_ptr = nullptr; ///< Pointer to store the result (STATUS)
+
+                // Connect operation parameters
+                AIPAddress *ip_ptr = nullptr; ///< IP address for connect
+                uint16_t port = 0;            ///< Port for connect
+                int *connect_result = nullptr; ///< Connect result storage
+
+                AccessorPayload() : op(STATUS) {}
+            };
+
+            TcpClientSyncAccessor(IAsyncContext &ctx, TcpClient &io);
 
             // Blocking, thread-safe status() call
             uint8_t status();
@@ -63,6 +61,14 @@ namespace async_tcp {
                 ctxUnlock();
                 return v;
             }
+
+        protected:
+            void onWork() override {
+                // onExecute();
+            };
+
+        public:
+            void workload(void *data) override {/* No workload data needed */ };
     };
 
 } // namespace async_tcp

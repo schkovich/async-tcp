@@ -27,24 +27,6 @@ namespace async_tcp {
             }
 
         public:
-            // Payload for accessor operations
-            struct AccessorPayload final : SyncPayload {
-                enum Operation {
-                    STATUS, ///< Get the TCP client status
-                    CONNECT ///< Connect to remote host
-                };
-
-                Operation op;            ///< The operation to perform
-                uint8_t *result_ptr = nullptr; ///< Pointer to store the result (STATUS)
-
-                // Connect operation parameters
-                AIPAddress *ip_ptr = nullptr; ///< IP address for connect
-                uint16_t port = 0;            ///< Port for connect
-                int *connect_result = nullptr; ///< Connect result storage
-
-                AccessorPayload() : op(STATUS) {}
-            };
-
             TcpClientSyncAccessor(IAsyncContext &ctx, TcpClient &io);
 
             // Blocking, thread-safe status() call
@@ -67,8 +49,27 @@ namespace async_tcp {
                 // onExecute();
             };
 
-        public:
             void workload(void *data) override {/* No workload data needed */ };
+
+        private:
+            // Payload for accessor operations
+            struct AccessorPayload final : SyncPayload {
+                enum Operation {
+                    STATUS, ///< Get the TCP client status
+                    CONNECT ///< Connect to remote host
+                };
+
+                Operation op;            ///< The operation to perform
+                uint8_t *result_ptr = nullptr; ///< Pointer to store the result (STATUS)
+
+                // Connect operation parameters
+                AIPAddress *ip_ptr = nullptr; ///< IP address for connect
+                uint16_t port = 0;            ///< Port for connect
+                int *connect_result = nullptr; ///< Connect result storage
+
+                AccessorPayload() : op(STATUS) {}
+            };
+
     };
 
 } // namespace async_tcp
